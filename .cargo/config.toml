@@ -1,0 +1,13 @@
+[build]
+rustflags = [
+    "-L",
+    "native=./.venv/lib",
+    "-C",
+    "link-arg=-Wl,-rpath,./.venv/lib",
+]
+
+[env]
+CC = { value = "", relative = true }
+CXX = { value = "", relative = true }
+OMPI_CC = { value = "", relative = true }
+OMPI_CXX = { value = "", relative = true }

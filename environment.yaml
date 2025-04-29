@@ -4,3 +4,5 @@ channels:
   - defaults
 dependencies:
   - openmpi=4.0.3
+  - gcc_linux-64
+  - gxx_linux-64

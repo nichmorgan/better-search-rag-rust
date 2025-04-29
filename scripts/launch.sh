@@ -16,6 +16,8 @@ APP_RUN="$SCRIPT_DIR/app_run.sh"
 
 chmod +x $OLLAMA_RUN $APP_RUN
 
+# Source the MPI setup environment before running
+source ./scripts/setup_mpi.sh
+
 $OLLAMA_RUN
 $APP_RUN
-

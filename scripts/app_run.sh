@@ -1,8 +1,11 @@
 #!/bin/bash
 
-module load openmpi gcc
+# Get project root
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
 
-echo "Running app"
-cargo build --release
+# Source MPI configuration
+source ./scripts/setup_mpi.sh
 
-
+echo "Running app with $(mpirun --version | head -n 1)"
+mpirun -np 2 ./target/release/better-search-rag-rust

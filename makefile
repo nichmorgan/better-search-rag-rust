@@ -19,6 +19,11 @@ setup:
 	mkdir -p $(LOG_DIR)
 	chmod +x $(LAUNCH_SCRIPT) $(OLLAMA_RUN_SCRIPT) $(OLLAMA_CHECK_SCRIPT)
 
+.PHONY: install
+install:
+	module load anaconda3 && \
+	conda env update -f environment.yaml -p .venv --prune
+
 .PHONY: stop start
 stop:
 	@echo "Finding and cancelling bsrr jobs..."
@@ -37,7 +42,12 @@ stop:
 start: setup stop
 	sbatch $(LAUNCH_SCRIPT)
 
-build:
+
+.PHONY: configure-mpi
+configure-mpi:
+	source ./scripts/setup_mpi.sh
+
+build: configure-mpi
 	$(CARGO) clean
 	module load gcc openmpi && $(CARGO) build --release
 
