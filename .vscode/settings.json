@@ -1,0 +1,35 @@
+{
+    "terminal.integrated.env.linux": {
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+    },
+    "rust-analyzer.server.extraEnv": {
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+    },
+    "rust-analyzer.cargo.extraEnv": {
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+    },
+    "rust-analyzer.check.extraEnv": {
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+    },
+    "rust-analyzer.runnables.extraEnv": {
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+    },
+    "rust-analyzer.cargo.buildScripts.overrideCommand": [
+        "srun", "--mem", "1GB", "--cores", "4",
+        "/scratch/mcn97/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets", "--keep-going"
+
+    ],
+    "rust-analyzer.rustfmt.overrideCommand": [
+        "srun", "--mem", "1GB", "--cores", "4",
+        "/scratch/mcn97/.cargo/bin/cargo", "fmt"
+    ],
+    "rust-analyzer.check.overrideCommand": [
+        "srun", "--mem", "1GB", "--cores", "4",
+        "/scratch/mcn97/.cargo/bin/cargo", "check", "--message-format=json"
+    ]
+}

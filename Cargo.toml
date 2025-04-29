@@ -1,0 +1,10 @@
+[package]
+name = "better-search-rag-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+mpi = { version = "0.8.0", features = ["user-operations"] }
+ollama-rs = "0.3.1"
+tokio = { version = "1.44.2", features = ["full"] }
