@@ -1,13 +1,13 @@
 {
     "terminal.integrated.env.linux": {
-        "CARGO_HOME": "/scratch/mcn97/.cargo",
-        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "CARGO_HOME": "/scratch/${USER}/.cargo",
+        "RUSTUP_HOME": "/scratch/${USER}/.rustup",
         "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
         "LD_LIBRARY_PATH": "${workspaceFolder}/.venv/lib:${env:LD_LIBRARY_PATH}"
     },
     "rust-analyzer.server.extraEnv": {
-        "CARGO_HOME": "/scratch/mcn97/.cargo",
-        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "CARGO_HOME": "/scratch/${USER}/.cargo",
+        "RUSTUP_HOME": "/scratch/${USER}/.rustup",
         "CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
         "CXX": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-c++",
         "OMPI_CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
@@ -17,11 +17,11 @@
     },
     "rust-analyzer.check.overrideCommand": [
         "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
-        "/scratch/mcn97/.cargo/bin/cargo", "check", "--message-format=json"
+        "/scratch/${USER}/.cargo/bin/cargo", "check", "--message-format=json"
     ],
     "rust-analyzer.cargo.buildScripts.overrideCommand": [
         "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
-        "/scratch/mcn97/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets"
+        "/scratch/${USER}/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets"
     ],
     "rust-analyzer.check.extraArgs": [
         "--target-dir=target/rust-analyzer"

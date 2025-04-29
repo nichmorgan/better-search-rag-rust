@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # Get absolute path to the .venv directory
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_DIR="$PROJECT_ROOT/.venv"
+VENV_DIR="./.venv"
 echo "Using OpenMPI from: $VENV_DIR"
 
 # Add Conda bin to PATH first

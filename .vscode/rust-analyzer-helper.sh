@@ -1,9 +1,13 @@
 #!/bin/bash
 
-# Source MPI setup
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-echo "PROJECT_ROOT: $PROJECT_ROOT"
-source "$PROJECT_ROOT/scripts/setup_mpi.sh"
+# Source MPI setup with error checking
+MPI_SETUP="./scripts/setup_mpi.sh"
+if [[ -f "$MPI_SETUP" ]]; then
+    source "$MPI_SETUP"
+else
+    echo "Error: MPI setup script not found at $MPI_SETUP"
+    exit 1
+fi
 
 # Run the actual command
 "$@"
