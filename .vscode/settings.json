@@ -2,34 +2,30 @@
     "terminal.integrated.env.linux": {
         "CARGO_HOME": "/scratch/mcn97/.cargo",
         "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
+        "LD_LIBRARY_PATH": "${workspaceFolder}/.venv/lib:${env:LD_LIBRARY_PATH}"
     },
     "rust-analyzer.server.extraEnv": {
         "CARGO_HOME": "/scratch/mcn97/.cargo",
         "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
+        "CXX": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-c++",
+        "OMPI_CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
+        "OMPI_CXX": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-c++",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
+        "LD_LIBRARY_PATH": "${workspaceFolder}/.venv/lib:${env:LD_LIBRARY_PATH}"
     },
-    "rust-analyzer.cargo.extraEnv": {
-        "CARGO_HOME": "/scratch/mcn97/.cargo",
-        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
-    },
-    "rust-analyzer.check.extraEnv": {
-        "CARGO_HOME": "/scratch/mcn97/.cargo",
-        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
-    },
-    "rust-analyzer.runnables.extraEnv": {
-        "CARGO_HOME": "/scratch/mcn97/.cargo",
-        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
-    },
-    "rust-analyzer.cargo.buildScripts.overrideCommand": [
-        "srun", "--mem", "1GB", "--cores", "4",
-        "/scratch/mcn97/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets", "--keep-going"
-
-    ],
-    "rust-analyzer.rustfmt.overrideCommand": [
-        "srun", "--mem", "1GB", "--cores", "4",
-        "/scratch/mcn97/.cargo/bin/cargo", "fmt"
-    ],
     "rust-analyzer.check.overrideCommand": [
-        "srun", "--mem", "1GB", "--cores", "4",
+        "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
         "/scratch/mcn97/.cargo/bin/cargo", "check", "--message-format=json"
-    ]
+    ],
+    "rust-analyzer.cargo.buildScripts.overrideCommand": [
+        "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
+        "/scratch/mcn97/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets"
+    ],
+    "rust-analyzer.check.extraArgs": [
+        "--target-dir=target/rust-analyzer"
+    ],
+    "rust-analyzer.procMacro.enable": false,
+    "rust-analyzer.cargo.buildScripts.enable": true
 }

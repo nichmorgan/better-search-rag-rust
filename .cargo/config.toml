@@ -1,3 +1,9 @@
+[env]
+CC = { value = ".venv/bin/x86_64-conda-linux-gnu-cc", relative = true }
+CXX = { value = ".venv/bin/x86_64-conda-linux-gnu-c++", relative = true }
+OMPI_CC = { value = ".venv/bin/x86_64-conda-linux-gnu-cc", relative = true }
+OMPI_CXX = { value = ".venv/bin/x86_64-conda-linux-gnu-c++", relative = true }
+
 [build]
 rustflags = [
     "-L",
@@ -5,9 +11,3 @@ rustflags = [
     "-C",
     "link-arg=-Wl,-rpath,./.venv/lib",
 ]
-
-[env]
-CC = { value = "", relative = true }
-CXX = { value = "", relative = true }
-OMPI_CC = { value = "", relative = true }
-OMPI_CXX = { value = "", relative = true }

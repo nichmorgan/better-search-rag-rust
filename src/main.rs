@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let llm_service = llm::LlmService::default();
 
     let text = format!("This is a test message from rank {}", rank);
-    let embeddings = llm_service.get_embeddings(vec![&text]).await?;
+    let embeddings = llm_service.get_embeddings(vec![&text]).await?.get(0).unwrap();
     println!(
         "Rank {}: Generated embedding with {} dimensions",
         rank,
