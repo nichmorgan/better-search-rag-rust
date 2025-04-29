@@ -1,0 +1,6 @@
+name: bsrr-deps
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - openmpi=4.0.3
