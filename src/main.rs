@@ -29,7 +29,6 @@ async fn main() {
     }
 
     let llm_service = llm::LlmService::default();
-
     if rank == 0 {
         llm_service.check_models().await;
     }
@@ -116,3 +115,4 @@ async fn main() {
     // Clean exit to avoid finalization issues
     std::process::exit(0);
 }
+
