@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Get absolute path to the .venv directory
-VENV_DIR="./.venv"
+PROJECT_ROOT="/scratch/mcn97/projects/better-search-rag-rust"
+VENV_DIR="$PROJECT_ROOT/.venv"
 echo "Using OpenMPI from: $VENV_DIR"
 
 # Add Conda bin to PATH first

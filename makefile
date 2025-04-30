@@ -1,7 +1,7 @@
 # General purpose Makefile with Ollama SLURM support
 
 LOG_DIR = .logs
-JOBS_DIR = ./scripts
+JOBS_DIR = scratch/mcn97/projects/better-search-rag-rust/scripts
 
 # Default target
 .PHONY: all
@@ -45,10 +45,10 @@ start: setup stop
 
 .PHONY: configure-mpi
 configure-mpi:
-	source ./scripts/setup_mpi.sh
+	scripts/setup_mpi.sh
 
 build: configure-mpi
-	$(CARGO) clean
+	$(CARGO) clean && \
 	module load gcc openmpi && $(CARGO) build --release
 
 # Clean up

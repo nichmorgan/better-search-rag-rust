@@ -1,27 +1,27 @@
 {
     "terminal.integrated.env.linux": {
-        "CARGO_HOME": "/scratch/${USER}/.cargo",
-        "RUSTUP_HOME": "/scratch/${USER}/.rustup",
-        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
-        "LD_LIBRARY_PATH": "${workspaceFolder}/.venv/lib:${env:LD_LIBRARY_PATH}"
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "PATH": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin:${PATH}",
+        "LD_LIBRARY_PATH": "/scratch/mcn97/projects/better-search-rag-rust/.venv/lib:${LD_LIBRARY_PATH}"
     },
     "rust-analyzer.server.extraEnv": {
-        "CARGO_HOME": "/scratch/${USER}/.cargo",
-        "RUSTUP_HOME": "/scratch/${USER}/.rustup",
-        "CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
-        "CXX": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-c++",
-        "OMPI_CC": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-cc",
-        "OMPI_CXX": "${workspaceFolder}/.venv/bin/x86_64-conda-linux-gnu-c++",
-        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
-        "LD_LIBRARY_PATH": "${workspaceFolder}/.venv/lib:${env:LD_LIBRARY_PATH}"
+        "CARGO_HOME": "/scratch/mcn97/.cargo",
+        "RUSTUP_HOME": "/scratch/mcn97/.rustup",
+        "CC": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-cc",
+        "CXX": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-c++",
+        "OMPI_CC": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-cc",
+        "OMPI_CXX": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-c++",
+        "PATH": "/scratch/mcn97/projects/better-search-rag-rust/.venv/bin:${PATH}",
+        "LD_LIBRARY_PATH": "/scratch/mcn97/projects/better-search-rag-rust/.venv/lib:${LD_LIBRARY_PATH}"
     },
     "rust-analyzer.check.overrideCommand": [
-        "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
-        "/scratch/${USER}/.cargo/bin/cargo", "check", "--message-format=json"
+        "/scratch/mcn97/projects/better-search-rag-rust/.vscode/rust-analyzer-helper.sh",
+        "/scratch/mcn97/.cargo/bin/cargo", "check", "--message-format=json"
     ],
     "rust-analyzer.cargo.buildScripts.overrideCommand": [
-        "${workspaceFolder}/.vscode/rust-analyzer-helper.sh",
-        "/scratch/${USER}/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets"
+        "/scratch/mcn97/projects/better-search-rag-rust/.vscode/rust-analyzer-helper.sh",
+        "/scratch/mcn97/.cargo/bin/cargo", "check", "--quiet", "--workspace", "--message-format=json", "--all-targets"
     ],
     "rust-analyzer.check.extraArgs": [
         "--target-dir=target/rust-analyzer"

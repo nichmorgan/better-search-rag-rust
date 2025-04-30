@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Set Ollama model directory
-export OLLAMA_MODELS=".volumes/ollama/models"
+PROJECT_ROOT="/scratch/mcn97/projects/better-search-rag-rust"
+export OLLAMA_MODELS="$PROJECT_ROOT/.volumes/ollama/models"
 
 # Set Ollama Host
 export OLLAMA_HOST=0.0.0.0

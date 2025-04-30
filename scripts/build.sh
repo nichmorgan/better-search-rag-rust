@@ -2,11 +2,11 @@
 # scripts/build.sh
 
 # Get project root
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="/scratch/mcn97/projects/better-search-rag-rust"
 cd "$PROJECT_ROOT"
 
 # Source the MPI setup
-source ./scripts/setup_mpi.sh
+source $PROJECT_ROOT/scripts/setup_mpi.sh
 
 # Build with cargo
 echo "Building with configured MPI environment..."

@@ -1,13 +1,13 @@
 [env]
-CC = { value = ".venv/bin/x86_64-conda-linux-gnu-cc", relative = true }
-CXX = { value = ".venv/bin/x86_64-conda-linux-gnu-c++", relative = true }
-OMPI_CC = { value = ".venv/bin/x86_64-conda-linux-gnu-cc", relative = true }
-OMPI_CXX = { value = ".venv/bin/x86_64-conda-linux-gnu-c++", relative = true }
+CC = { value = "scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-cc", relative = false }
+CXX = { value = "scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-c++", relative = false }
+OMPI_CC = { value = "scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-cc", relative = false }
+OMPI_CXX = { value = "scratch/mcn97/projects/better-search-rag-rust/.venv/bin/x86_64-conda-linux-gnu-c++", relative = false }
 
 [build]
 rustflags = [
     "-L",
-    "native=./.venv/lib",
+    "native=scratch/mcn97/projects/better-search-rag-rust/.venv/lib",
     "-C",
-    "link-arg=-Wl,-rpath,./.venv/lib",
+    "link-arg=-Wl,-rpath,scratch/mcn97/projects/better-search-rag-rust/.venv/lib",
 ]

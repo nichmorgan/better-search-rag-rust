@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Get project root
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="/scratch/mcn97/projects/better-search-rag-rust"
 cd "$PROJECT_ROOT"
 
 # Source MPI configuration
-source ./scripts/setup_mpi.sh
+source $PROJECT_ROOT/scripts/setup_mpi.sh
 
 echo "Running app with $(mpirun --version | head -n 1)"
-mpirun -np 2 ./target/release/better-search-rag-rust
+mpirun -np 2 $PROJECT_ROOT/target/release/better-search-rag-rust
