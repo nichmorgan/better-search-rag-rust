@@ -71,8 +71,6 @@ async fn main() {
     };
 
     println!("[Rank {}] Local dimension: {}", rank, dim);
-
-    // FIX: Use a root broadcast approach for gathering dimensions
     world.process_at_rank(0).broadcast_into(&mut dim);
     println!("[Rank {}] Received dimension: {}", rank, dim);
 

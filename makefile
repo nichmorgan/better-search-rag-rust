@@ -2,7 +2,7 @@ N = 6
 OUT_FILE = ./target/release/better-search-rag-rust
 
 run-ollama:
-	OLLAMA_MODELS=".volumes/ollama/"" ollama serve & >> .logs/ollama
+	OLLAMA_MODELS=".volumes/ollama/"" ollama serve
 
 setup:
 	cargo build --release && \
