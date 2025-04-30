@@ -36,4 +36,3 @@ pub trait VectorStorage {
     /// Gets a specific vector by index
     fn get_vector<P: AsRef<Path>>(path: P, index: usize) -> Result<Array1<f32>, Self::Error>;
 }
-

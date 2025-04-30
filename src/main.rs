@@ -1,52 +1,13 @@
 mod llm;
+mod mpi_helper;
 mod source;
 mod vectorstore;
 
-use std::{ops::Mul, time::Instant};
+use std::{fs, time::Instant};
 
 use mpi::traits::*;
-use ndarray::Array1;
-use source::read_file;
-use vectorstore::{arrow::ArrowVectorStorage, VectorStorage};
 
-fn read_files<C: Communicator>(dir: &str, extensions: &[&str], world: &C, rank: i32, size: i32) -> Vec<String> {
-    let files = source::find_files_by_extensions(dir, &extensions);
-    let mut rank_contents = Vec::new();
-
-    if rank == 0 {
-        println!(
-            "Found {} files filtered by extensions: {:?}",
-            files.len(),
-            extensions
-        );
-    }
-    world.barrier();
-
-    if rank as usize > files.len() - 1 {
-        println!("[Rank {}] No files to me.", rank);
-    } else {
-        let files_per_rank = if size as usize > files.len() {
-            1
-        } else {
-            files.len().div_ceil(size as usize)
-        };
-        let start_index = files_per_rank.mul(rank as usize);
-        let end_index = if rank == size - 1 {
-            files.len()
-        } else {
-            start_index + files_per_rank
-        };
-
-        let rank_files = if rank as usize > files.len() {
-            &[]
-        } else {
-            &files[start_index..end_index]
-        };
-        rank_contents.extend(rank_files.iter().map(read_file).flatten());
-    }
-
-    rank_contents
-}
+use mpi_helper::*;
 
 #[tokio::main]
 async fn main() {
@@ -61,59 +22,97 @@ async fn main() {
     let dir = ".repos/jabref";
     let vstore_path = ".volumes/vstore";
     let chunk_size = 512;
-    let reset = true;
+
+    // Create base directories if they don't exist
+    if rank == 0 {
+        fs::create_dir_all(".volumes").unwrap_or_default();
+    }
 
     let llm_service = llm::LlmService::default();
-    
+
     if rank == 0 {
         llm_service.check_models().await;
     }
     world.barrier();
 
-    
+    // Step 1: Read files distributed across processes
     let start = Instant::now();
     let rank_contents = read_files(dir, &extensions, &world, rank, size);
     let elapsed = Instant::now() - start;
     println!(
-        "[Rank {}] readed {} files in {} seconds",
+        "[Rank {}] read {} files in {} seconds",
         rank,
         rank_contents.len(),
         elapsed.as_secs()
     );
 
+    // Step 2: Generate embeddings in parallel
     let start = Instant::now();
-    let embeddings = llm_service.get_embeddings(&rank_contents).await.expect("Fail to embed");
+    let embeddings = if !rank_contents.is_empty() {
+        llm_service
+            .get_embeddings(&rank_contents)
+            .await
+            .expect("Failed to embed")
+    } else {
+        Vec::new()
+    };
     let elapsed = Instant::now() - start;
     println!(
-        "[Rank {}] embed {} files in {} seconds",
+        "[Rank {}] embedded {} files in {} seconds",
         rank,
         embeddings.len(),
         elapsed.as_secs()
     );
 
-    if rank == 0 {
-        let dim = embeddings.first().unwrap().len();
-        println!("Ensure storage with {} dim", dim);
-        ArrowVectorStorage::create_storage(vstore_path, embeddings.first().unwrap().len(), chunk_size, reset).expect("Fail to create vstore");
+    // Step 3: Get embedding dimensions and coordinate across processes
+    let mut dim = if !embeddings.is_empty() {
+        embeddings[0].len()
+    } else {
+        0
+    };
+
+    println!("[Rank {}] Local dimension: {}", rank, dim);
+
+    // FIX: Use a root broadcast approach for gathering dimensions
+    world.process_at_rank(0).broadcast_into(&mut dim);
+    println!("[Rank {}] Received dimension: {}", rank, dim);
+
+    if dim == 0 {
+        println!(
+            "[Rank {}] No valid embeddings found across processes.",
+            rank
+        );
+        world.barrier();
+        std::process::exit(0);
     }
-    world.barrier();
-    let start = Instant::now();
-    embeddings.iter().for_each(|vector| {
-        ArrowVectorStorage::append_vector(vstore_path, &Array1::from_vec(vector.to_vec())).expect("Fail to append vector");
-    });
-    let elapsed = Instant::now() - start;
-    println!(
-        "[Rank {}] saved {} vectors in {} seconds",
-        rank,
-        embeddings.len(),
-        elapsed.as_secs()
-    );
 
-    // After all MPI operations are done but before finalization
+    // Step 4: Each process stores its vectors
+    if !embeddings.is_empty() {
+        let result = process_store_vectors(&embeddings, vstore_path, rank, dim, chunk_size);
+        if let Err(e) = result {
+            println!("[Rank {}] Error in vector storage: {}", rank, e);
+        }
+    } else {
+        println!("[Rank {}] No embeddings to store", rank);
+    }
+
+    // Wait for all processes to finish writing their files
+    world.barrier();
+
+    // Step 5: Process 0 merges all storage files
+    if rank == 0 {
+        let result = merge_vector_stores(&world, vstore_path, dim, chunk_size);
+        if let Err(e) = result {
+            println!("Error merging vector stores: {}", e);
+        }
+    }
+
+    // After all MPI operations are done
     world.barrier();
     if rank == 0 {
         println!("MPI operations completed successfully");
     }
-    // Force exit to avoid finalization issues
+
+    // Clean exit to avoid finalization issues
     std::process::exit(0);
 }

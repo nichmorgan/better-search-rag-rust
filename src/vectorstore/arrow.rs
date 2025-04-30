@@ -345,8 +345,6 @@ impl VectorStorage for ArrowVectorStorage {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,7 +366,7 @@ mod tests {
     fn test_create_storage() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         let result = ArrowVectorStorage::create_storage(&path, 128, 1000, false);
         assert!(result.is_ok());
         assert!(path.exists());
@@ -378,21 +376,21 @@ mod tests {
     fn test_write_and_read_slice() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create test vectors
         let vectors = create_test_vectors(10, 128);
-        
+
         // Write vectors
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Read vectors back
         let read_result = ArrowVectorStorage::read_slice(&path, 0, 10);
         assert!(read_result.is_ok());
-        
+
         let read_vectors = read_result.unwrap();
         assert_eq!(read_vectors.shape(), vectors.shape());
-        
+
         // Verify data correctness
         for i in 0..vectors.nrows() {
             for j in 0..vectors.ncols() {
@@ -405,21 +403,21 @@ mod tests {
     fn test_read_partial_slice() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create test vectors
         let vectors = create_test_vectors(10, 128);
-        
+
         // Write vectors
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Read a subset of vectors
         let read_result = ArrowVectorStorage::read_slice(&path, 2, 5);
         assert!(read_result.is_ok());
-        
+
         let read_vectors = read_result.unwrap();
         assert_eq!(read_vectors.shape(), [5, 128]);
-        
+
         // Verify data correctness
         for i in 0..5 {
             for j in 0..vectors.ncols() {
@@ -432,31 +430,31 @@ mod tests {
     fn test_append_vector() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create initial vectors
         let vectors = create_test_vectors(5, 128);
-        
+
         // Write initial vectors
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Create a vector to append
         let new_vector = Array1::from_vec((0..128).map(|i| i as f32 / 5.0).collect());
-        
+
         // Append the vector
         let append_result = ArrowVectorStorage::append_vector(&path, &new_vector);
         assert!(append_result.is_ok());
-        
+
         let new_idx = append_result.unwrap();
         assert_eq!(new_idx, 5); // Should be appended after the initial 5 vectors
-        
+
         // Read back the appended vector
         let read_result = ArrowVectorStorage::get_vector(&path, new_idx);
         assert!(read_result.is_ok());
-        
+
         let read_vector = read_result.unwrap();
         assert_eq!(read_vector.len(), 128);
-        
+
         // Verify data correctness
         for i in 0..128 {
             assert!((new_vector[i] - read_vector[i]).abs() < 1e-5);
@@ -467,22 +465,22 @@ mod tests {
     fn test_get_vector() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create test vectors
         let vectors = create_test_vectors(10, 128);
-        
+
         // Write vectors
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Get a specific vector
         let index = 7;
         let get_result = ArrowVectorStorage::get_vector(&path, index);
         assert!(get_result.is_ok());
-        
+
         let vector = get_result.unwrap();
         assert_eq!(vector.len(), 128);
-        
+
         // Verify data correctness
         for j in 0..vectors.ncols() {
             assert!((vectors[[index, j]] - vector[j]).abs() < 1e-5);
@@ -492,11 +490,11 @@ mod tests {
     #[test]
     fn test_error_handling() {
         let non_existent_path = PathBuf::from("/non/existent/path/vectors.parquet");
-        
+
         // Try to read from non-existent file
         let read_result = ArrowVectorStorage::read_slice(&non_existent_path, 0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
-        
+
         // Try to get vector from non-existent file
         let get_result = ArrowVectorStorage::get_vector(&non_existent_path, 0);
         assert!(matches!(get_result, Err(ArrowStorageError::NotFound)));
@@ -506,23 +504,23 @@ mod tests {
     fn test_large_vectors() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create large test vectors
         let dim = 1536; // Typical embedding dimension
         let count = 100;
         let vectors = create_test_vectors(count, dim);
-        
+
         // Write vectors
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Read vectors back
         let read_result = ArrowVectorStorage::read_slice(&path, 0, count);
         assert!(read_result.is_ok());
-        
+
         let read_vectors = read_result.unwrap();
         assert_eq!(read_vectors.shape(), vectors.shape());
-        
+
         // Verify data correctness (sample a few points)
         for i in [0, 25, 50, 75, 99] {
             for j in [0, 100, 500, 1000, 1535] {
@@ -535,16 +533,16 @@ mod tests {
     fn test_reset_storage() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        
+
         // Create initial storage and write vectors
         let vectors = create_test_vectors(10, 128);
         let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
         assert!(write_result.is_ok());
-        
+
         // Reset storage
         let reset_result = ArrowVectorStorage::create_storage(&path, 128, 1000, true);
         assert!(reset_result.is_ok());
-        
+
         // Verify storage exists but is empty
         let read_result = ArrowVectorStorage::read_slice(&path, 0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
