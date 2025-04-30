@@ -3,19 +3,15 @@
 use anyhow::{Context, Result};
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::{IntoUrlSealed, Ollama};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 // Client for Ollama API interactions
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct LlmService {
     client: Ollama,
     embedding_model: String,
 }
 
 // Shared state for the client
-pub type SharedLlmService = Arc<Mutex<LlmService>>;
-
 impl LlmService {
     pub fn new(url: String, embedding_model: String) -> Self {
         Self {
@@ -31,13 +27,25 @@ impl LlmService {
         )
     }
 
-    pub fn shared(&self) -> SharedLlmService {
-        Arc::new(Mutex::new(self.clone()))
+    pub async fn check_models(&self) {
+        if self
+            .client
+            .show_model_info(self.embedding_model.clone())
+            .await
+            .is_err()
+        {
+            println!("Model {} not found, downloading...", &self.embedding_model);
+            self.client
+                .pull_model(self.embedding_model.clone(), false)
+                .await
+                .expect("Fail to pull model");
+        }
+        println!("Models all set");
     }
 
-    // Get embedding for text
-    pub async fn get_embeddings(&self, texts: Vec<&str>) -> Result<Vec<Vec<f32>>> {
-        let request = GenerateEmbeddingsRequest::new(self.embedding_model.clone(), texts.into());
+    pub async fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>> {
+        let request =
+            GenerateEmbeddingsRequest::new(self.embedding_model.clone(), texts.to_vec().into());
         let response = self
             .client
             .generate_embeddings(request)

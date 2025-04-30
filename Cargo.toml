@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
+hdf5 = "0.8.1"
+memmap2 = "0.9.5"
 mpi = { version = "0.8.0", features = [] }
+ndarray = "0.16.1"
 ollama-rs = { version = "0.3.1", default-features = false }
 tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "macros"] }
+walkdir = "2.5.0"
