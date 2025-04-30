@@ -47,9 +47,13 @@ start: setup stop
 configure-mpi:
 	scripts/setup_mpi.sh
 
-build: configure-mpi
-	$(CARGO) clean && \
-	module load gcc openmpi && $(CARGO) build --release
+# Simplified build target
+.PHONY: build
+build:
+	@echo "Building with system MPI..."
+	source scripts/setup_mpi.sh && \
+	cargo clean && \
+	cargo build --release
 
 # Clean up
 .PHONY: clean
