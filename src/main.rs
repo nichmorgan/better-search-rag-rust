@@ -60,13 +60,11 @@ async fn main() {
     let extensions = ["py"];
     let dir = ".repos/jabref";
     let vstore_path = ".volumes/vstore";
-    let vstore_dim = 512;
     let chunk_size = 512;
     let reset = true;
 
     let llm_service = llm::LlmService::default();
-    ArrowVectorStorage::create_storage(vstore_path, vstore_dim, chunk_size, reset).expect("Fail to create vstore");
-
+    
     if rank == 0 {
         llm_service.check_models().await;
     }
@@ -93,6 +91,12 @@ async fn main() {
         elapsed.as_secs()
     );
 
+    if rank == 0 {
+        let dim = embeddings.first().unwrap().len();
+        println!("Ensure storage with {} dim", dim);
+        ArrowVectorStorage::create_storage(vstore_path, embeddings.first().unwrap().len(), chunk_size, reset).expect("Fail to create vstore");
+    }
+    world.barrier();
     let start = Instant::now();
     embeddings.iter().for_each(|vector| {
         ArrowVectorStorage::append_vector(vstore_path, &Array1::from_vec(vector.to_vec())).expect("Fail to append vector");
