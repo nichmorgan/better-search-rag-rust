@@ -6,6 +6,12 @@ use mpi::traits::*;
 use ndarray::Array1;
 use vectorstore::{VectorStorage, arrow::ArrowVectorStorage};
 
+pub const ROOT: i32 = 0;
+
+pub fn is_root(rank: i32) -> bool {
+    ROOT == rank
+}
+
 pub fn read_files<C: Communicator>(
     dir: &str,
     extensions: &[&str],
@@ -16,7 +22,7 @@ pub fn read_files<C: Communicator>(
     let files = source::find_files_by_extensions(dir, &extensions);
     let mut rank_contents = Vec::new();
 
-    if rank == 0 {
+    if is_root(rank) {
         println!(
             "Found {} files filtered by extensions: {:?}",
             files.len(),
@@ -60,8 +66,9 @@ pub fn process_store_vectors(
     }
 
     let process_path = format!("{}_rank_{}", path, rank);
+    let vstore = ArrowVectorStorage::new(&process_path, dimension, chunk_size);
 
-    match ArrowVectorStorage::create_storage(&process_path, dimension, chunk_size, true) {
+    match vstore.create_or_load_storage(true) {
         Ok(_) => println!("[Rank {}] Created process storage file", rank),
         Err(e) => return Err(format!("Error creating storage: {:?}", e)),
     }
@@ -70,7 +77,7 @@ pub fn process_store_vectors(
     let mut successful_vectors = 0;
 
     for (i, vector) in embeddings.iter().enumerate() {
-        match ArrowVectorStorage::append_vector(&process_path, &Array1::from_vec(vector.clone())) {
+        match vstore.append_vector(&Array1::from_vec(vector.clone())) {
             Ok(_idx) => {
                 successful_vectors += 1;
                 if i % 10 == 0 || i == embeddings.len() - 1 {
@@ -113,7 +120,9 @@ pub fn merge_vector_stores<C: Communicator>(
     chunk_size: usize,
 ) -> Result<usize, String> {
     // Create the final storage file
-    match ArrowVectorStorage::create_storage(base_path, dimension, chunk_size, true) {
+    let vstore = ArrowVectorStorage::new(&base_path, dimension, chunk_size);
+
+    match vstore.create_or_load_storage(true) {
         Ok(_) => println!("Created final storage file"),
         Err(e) => return Err(format!("Error creating final storage: {:?}", e)),
     }
@@ -125,6 +134,8 @@ pub fn merge_vector_stores<C: Communicator>(
     let mut total_vectors = 0;
     for r in 0..size {
         let process_file = format!("{}_rank_{}", base_path, r);
+        let process_vstore = ArrowVectorStorage::new(&process_file, dimension, chunk_size);
+
         if Path::new(&process_file).exists() {
             // Read all vectors from this process file
             let mut count = 0;
@@ -132,14 +143,14 @@ pub fn merge_vector_stores<C: Communicator>(
             let mut start_idx = 0;
 
             loop {
-                match ArrowVectorStorage::read_slice(&process_file, start_idx, batch_size) {
+                match process_vstore.read_slice(start_idx, batch_size) {
                     Ok(vectors) => {
                         if vectors.nrows() == 0 {
                             break;
                         }
 
                         // Write these vectors to the main storage
-                        match ArrowVectorStorage::write_slice(base_path, &vectors, total_vectors) {
+                        match vstore.write_slice(&vectors, total_vectors) {
                             Ok(_) => {}
                             Err(e) => println!("Error writing batch from rank {}: {:?}", r, e),
                         }
@@ -179,4 +190,18 @@ pub fn merge_vector_stores<C: Communicator>(
     );
 
     Ok(total_vectors)
+}
+
+// fn similarity_search<C: Communicator, V: VectorStorage>(
+//     world: &C,
+//     rank: i32,
+//     size: i32,
+//     vstore: &V,
+// ) {
+
+// }
+
+pub fn mpi_finish(rank: i32) {
+    println!("[Rank {}] Finished", rank);
+    std::process::exit(0);
 }

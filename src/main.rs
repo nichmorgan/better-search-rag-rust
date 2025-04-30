@@ -15,6 +15,7 @@ async fn main() {
     let world = universe.world();
     let rank = world.rank();
     let size = world.size();
+    let root_process = world.process_at_rank(ROOT);
 
     println!("Process {} of {} initialized", rank, size);
 
@@ -24,12 +25,12 @@ async fn main() {
     let chunk_size = 512;
 
     // Create base directories if they don't exist
-    if rank == 0 {
+    if is_root(rank) {
         fs::create_dir_all(".volumes").unwrap_or_default();
     }
 
     let llm_service = llm::LlmService::default();
-    if rank == 0 {
+    if is_root(rank) {
         llm_service.check_models().await;
     }
     world.barrier();
@@ -71,7 +72,7 @@ async fn main() {
     };
 
     println!("[Rank {}] Local dimension: {}", rank, dim);
-    world.process_at_rank(0).broadcast_into(&mut dim);
+    root_process.broadcast_into(&mut dim);
     println!("[Rank {}] Received dimension: {}", rank, dim);
 
     if dim == 0 {
@@ -80,7 +81,7 @@ async fn main() {
             rank
         );
         world.barrier();
-        std::process::exit(0);
+        mpi_finish(rank);
     }
 
     // Step 4: Each process stores its vectors
@@ -97,7 +98,7 @@ async fn main() {
     world.barrier();
 
     // Step 5: Process 0 merges all storage files
-    if rank == 0 {
+    if is_root(rank) {
         let result = merge_vector_stores(&world, vstore_path, dim, chunk_size);
         if let Err(e) = result {
             println!("Error merging vector stores: {}", e);
@@ -106,11 +107,11 @@ async fn main() {
 
     // After all MPI operations are done
     world.barrier();
-    if rank == 0 {
+    if is_root(rank) {
         println!("MPI operations completed successfully");
     }
 
     // Clean exit to avoid finalization issues
-    std::process::exit(0);
+    mpi_finish(rank);
 }
 

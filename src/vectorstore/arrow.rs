@@ -55,18 +55,27 @@ impl From<parquet::errors::ParquetError> for ArrowStorageError {
     }
 }
 
-pub struct ArrowVectorStorage;
+pub struct ArrowVectorStorage<P: AsRef<Path>> {
+    path: P,
+    dimension: usize,
+    chunk_size: usize,
+    count: usize,
+}
 
-impl VectorStorage for ArrowVectorStorage {
+impl<P: AsRef<Path>> ArrowVectorStorage<P> {
+    pub fn new(path: P, dimension: usize, chunk_size: usize) -> Self {
+        Self { path, dimension, chunk_size, count: 0 }
+    }
+}
+
+impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
     type Error = ArrowStorageError;
 
-    fn create_storage<P: AsRef<Path>>(
-        path: P,
-        dimension: usize,
-        chunk_size: usize,
-        reset: bool,
-    ) -> Result<(), Self::Error> {
-        let path_ref = path.as_ref();
+    fn create_or_load_storage(
+            &self,
+            reset: bool,
+        ) -> Result<(), Self::Error> {
+        let path_ref = self.path.as_ref();
 
         // Check if file already exists
         if path_ref.exists() {
@@ -91,7 +100,7 @@ impl VectorStorage for ArrowVectorStorage {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, false)),
-                    dimension as i32,
+                    self.dimension as i32,
                 ),
                 false,
             ),
@@ -102,7 +111,7 @@ impl VectorStorage for ArrowVectorStorage {
         let file = File::create(path_ref)?;
         let props = WriterProperties::builder()
             .set_compression(parquet::basic::Compression::SNAPPY)
-            .set_max_row_group_size(chunk_size)
+            .set_max_row_group_size(self.chunk_size)
             .build();
 
         let writer = ArrowWriter::try_new(file, schema.clone(), Some(props))
@@ -116,19 +125,16 @@ impl VectorStorage for ArrowVectorStorage {
         Ok(())
     }
 
-    fn write_slice<P: AsRef<Path>>(
-        path: P,
+    fn write_slice(
+        &self,
         vectors: &Array2<f32>,
         start_idx: usize,
     ) -> Result<(), Self::Error> {
-        let path_ref = path.as_ref();
+        let path_ref = self.path.as_ref();
 
         // Create the file if it doesn't exist
         if !path_ref.exists() {
-            Self::create_storage(
-                path_ref,
-                vectors.ncols(),
-                1000, // Default chunk size
+            self.create_or_load_storage(
                 false,
             )?;
         }
@@ -188,12 +194,12 @@ impl VectorStorage for ArrowVectorStorage {
         Ok(())
     }
 
-    fn read_slice<P: AsRef<Path>>(
-        path: P,
+    fn read_slice(
+        &self,
         start_idx: usize,
         count: usize,
     ) -> Result<Array2<f32>, Self::Error> {
-        let path_ref = path.as_ref();
+        let path_ref = self.path.as_ref();
 
         if !path_ref.exists() {
             return Err(ArrowStorageError::NotFound);
@@ -295,15 +301,12 @@ impl VectorStorage for ArrowVectorStorage {
         Ok(result)
     }
 
-    fn append_vector<P: AsRef<Path>>(path: P, vector: &Array1<f32>) -> Result<usize, Self::Error> {
-        let path_ref = path.as_ref();
+    fn append_vector(&self, vector: &Array1<f32>) -> Result<usize, Self::Error> {
+        let path_ref = self.path.as_ref();
 
         // Create the file if it doesn't exist
         if !path_ref.exists() {
-            Self::create_storage(
-                path_ref,
-                vector.dim(),
-                1000, // Default chunk size
+            self.create_or_load_storage(
                 false,
             )?;
         }
@@ -327,14 +330,14 @@ impl VectorStorage for ArrowVectorStorage {
         }
 
         // Write the vector using write_slice
-        Self::write_slice(path_ref, &array2, new_idx)?;
+        self.write_slice(&array2, new_idx)?;
 
         Ok(new_idx)
     }
 
-    fn get_vector<P: AsRef<Path>>(path: P, index: usize) -> Result<Array1<f32>, Self::Error> {
+    fn get_vector(&self, index: usize) -> Result<Array1<f32>, Self::Error> {
         // Use read_slice to get just one vector
-        let vectors = Self::read_slice(path, index, 1)?;
+        let vectors = self.read_slice(index, 1)?;
 
         if vectors.nrows() == 0 {
             return Err(ArrowStorageError::NotFound);
@@ -342,6 +345,11 @@ impl VectorStorage for ArrowVectorStorage {
 
         // Extract the first row
         Ok(vectors.row(0).to_owned())
+    }
+
+    fn get_count(&self) -> Result<usize, Self::Error> {
+        // TODO: count from the database
+        Ok(self.count)
     }
 }
 
@@ -366,8 +374,9 @@ mod tests {
     fn test_create_storage() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let vstore = ArrowVectorStorage::new(&path, 128, 1000);
 
-        let result = ArrowVectorStorage::create_storage(&path, 128, 1000, false);
+        let result = vstore.create_or_load_storage(false);
         assert!(result.is_ok());
         assert!(path.exists());
     }
@@ -376,16 +385,18 @@ mod tests {
     fn test_write_and_read_slice() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 128;
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create test vectors
-        let vectors = create_test_vectors(10, 128);
+        let vectors = create_test_vectors(10, dim);
 
         // Write vectors
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Read vectors back
-        let read_result = ArrowVectorStorage::read_slice(&path, 0, 10);
+        let read_result = vstore.read_slice( 0, 10);
         assert!(read_result.is_ok());
 
         let read_vectors = read_result.unwrap();
@@ -403,16 +414,18 @@ mod tests {
     fn test_read_partial_slice() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 128;
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create test vectors
-        let vectors = create_test_vectors(10, 128);
+        let vectors = create_test_vectors(10, dim);
 
         // Write vectors
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Read a subset of vectors
-        let read_result = ArrowVectorStorage::read_slice(&path, 2, 5);
+        let read_result = vstore.read_slice(2, 5);
         assert!(read_result.is_ok());
 
         let read_vectors = read_result.unwrap();
@@ -430,26 +443,28 @@ mod tests {
     fn test_append_vector() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 128;
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create initial vectors
-        let vectors = create_test_vectors(5, 128);
+        let vectors = create_test_vectors(5, dim);
 
         // Write initial vectors
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Create a vector to append
         let new_vector = Array1::from_vec((0..128).map(|i| i as f32 / 5.0).collect());
 
         // Append the vector
-        let append_result = ArrowVectorStorage::append_vector(&path, &new_vector);
+        let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
 
         let new_idx = append_result.unwrap();
         assert_eq!(new_idx, 5); // Should be appended after the initial 5 vectors
 
         // Read back the appended vector
-        let read_result = ArrowVectorStorage::get_vector(&path, new_idx);
+        let read_result = vstore.get_vector(new_idx);
         assert!(read_result.is_ok());
 
         let read_vector = read_result.unwrap();
@@ -465,17 +480,19 @@ mod tests {
     fn test_get_vector() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 128;
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create test vectors
-        let vectors = create_test_vectors(10, 128);
+        let vectors = create_test_vectors(10, dim);
 
         // Write vectors
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Get a specific vector
         let index = 7;
-        let get_result = ArrowVectorStorage::get_vector(&path, index);
+        let get_result = vstore.get_vector(index);
         assert!(get_result.is_ok());
 
         let vector = get_result.unwrap();
@@ -490,13 +507,15 @@ mod tests {
     #[test]
     fn test_error_handling() {
         let non_existent_path = PathBuf::from("/non/existent/path/vectors.parquet");
+        let dim = 128;
+        let vstore = ArrowVectorStorage::new(&non_existent_path, dim, 1000);
 
         // Try to read from non-existent file
-        let read_result = ArrowVectorStorage::read_slice(&non_existent_path, 0, 10);
+        let read_result = vstore.read_slice(0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
 
         // Try to get vector from non-existent file
-        let get_result = ArrowVectorStorage::get_vector(&non_existent_path, 0);
+        let get_result = vstore.get_vector(0);
         assert!(matches!(get_result, Err(ArrowStorageError::NotFound)));
     }
 
@@ -504,18 +523,19 @@ mod tests {
     fn test_large_vectors() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 1536;
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create large test vectors
-        let dim = 1536; // Typical embedding dimension
         let count = 100;
         let vectors = create_test_vectors(count, dim);
 
         // Write vectors
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Read vectors back
-        let read_result = ArrowVectorStorage::read_slice(&path, 0, count);
+        let read_result = vstore.read_slice(0, count);
         assert!(read_result.is_ok());
 
         let read_vectors = read_result.unwrap();
@@ -533,18 +553,20 @@ mod tests {
     fn test_reset_storage() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
+        let dim = 128; // Typical embedding dimension
+        let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
         // Create initial storage and write vectors
-        let vectors = create_test_vectors(10, 128);
-        let write_result = ArrowVectorStorage::write_slice(&path, &vectors, 0);
+        let vectors = create_test_vectors(10, dim);
+        let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
         // Reset storage
-        let reset_result = ArrowVectorStorage::create_storage(&path, 128, 1000, true);
+        let reset_result = vstore.create_or_load_storage(true);
         assert!(reset_result.is_ok());
 
         // Verify storage exists but is empty
-        let read_result = ArrowVectorStorage::read_slice(&path, 0, 10);
+        let read_result = vstore.read_slice(0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
     }
 }
