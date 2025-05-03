@@ -100,7 +100,7 @@ async fn main() {
 
     // Step 5: Process 0 merges all storage files
     if is_root(rank) {
-        let result = merge_vector_stores(&world, vstore_dir, dim, chunk_size);
+        let result = merge_vector_stores(size, vstore_dir, dim, chunk_size);
         if let Err(e) = result {
             println!("Error merging vector stores: {}", e);
         }

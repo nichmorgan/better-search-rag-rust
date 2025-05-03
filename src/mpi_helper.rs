@@ -153,8 +153,8 @@ pub fn process_store_vectors(
 }
 
 // Function to merge all process vector stores into a single one
-pub fn merge_vector_stores<C: Communicator>(
-    world: &C,
+pub fn merge_vector_stores(
+    size: i32,
     vstore_dir: &Path,
     dimension: usize,
     chunk_size: usize,
@@ -167,8 +167,6 @@ pub fn merge_vector_stores<C: Communicator>(
     }
 
     let start = Instant::now();
-    let size = world.size();
-
     // Merge all process files into the final storage
     let mut total_vectors = 0;
     for r in 0..size {
