@@ -3,7 +3,7 @@ use crate::{
     vectorstore::{VectorStorage, cosine_distance, arrow::ArrowVectorStorage},
 };
 
-use std::{ops::Mul, path::Path, time::Instant};
+use std::{ops::Mul, path::Path};
 
 use mpi::traits::*;
 use ndarray::{Array1, Array2};

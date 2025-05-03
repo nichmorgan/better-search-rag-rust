@@ -1,6 +1,5 @@
 // src/vectorstore/arrow_storage.rs
 
-use anyhow::Ok;
 use arrow_array::{Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, UInt32Array};
 use arrow_schema::{DataType, Field, Schema};
 use ndarray::{Array1, Array2};
