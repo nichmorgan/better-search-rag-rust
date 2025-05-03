@@ -485,13 +485,11 @@ mod tests {
         let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
         
-        // Important: Our implementation replaces all vectors with the new one
-        // So the count should be 1, not 6
         let count = vstore.get_count().unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count, 6);
 
         // Read back the appended vector
-        let read_result = vstore.get_vector(0);
+        let read_result = vstore.get_vector(initial_count);
         assert!(read_result.is_ok());
 
         let read_vector = read_result.unwrap();
@@ -604,47 +602,37 @@ mod tests {
         let dim = 128;
         let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
-        // Test count on non-existent file
         let count_result = vstore.get_count();
         assert!(count_result.is_ok());
         assert_eq!(count_result.unwrap(), 0);
 
-        // Create test vectors and write them
         let vectors = create_test_vectors(5, dim);
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
-        // Verify count matches number of vectors written
         let count_result = vstore.get_count();
         assert!(count_result.is_ok());
         assert_eq!(count_result.unwrap(), 5);
 
-        // Note: write_slice replaces the entire file, so writing 3 vectors
-        // will result in only 3 vectors total, not 8
         let new_vectors = create_test_vectors(3, dim);
         let write_result = vstore.write_slice(&new_vectors, 0);
         assert!(write_result.is_ok());
 
-        // Verify count is now 3 (not 8)
         let count_result = vstore.get_count();
         assert!(count_result.is_ok());
         assert_eq!(count_result.unwrap(), 3);
 
-        // Append a single vector - this uses append_vectors which REPLACES the file
         let new_vector = Array1::from_vec((0..dim).map(|i| i as f32 / 5.0).collect());
         let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
 
-        // Verify count is 1 after append (not 4) since append replaces all vectors
         let count_result = vstore.get_count();
         assert!(count_result.is_ok());
-        assert_eq!(count_result.unwrap(), 1);
+        assert_eq!(count_result.unwrap(), 4);
 
-        // Reset storage
         let reset_result = vstore.create_or_load_storage(true);
         assert!(reset_result.is_ok());
 
-        // Verify count is reset
         let count_result = vstore.get_count();
         assert!(count_result.is_ok());
         assert_eq!(count_result.unwrap(), 0);
