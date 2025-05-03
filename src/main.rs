@@ -3,7 +3,7 @@ mod mpi_helper;
 mod source;
 mod vectorstore;
 
-use std::{fs, time::Instant};
+use std::{fs, path::Path, time::Instant};
 
 use mpi::traits::*;
 
@@ -21,7 +21,7 @@ async fn main() {
 
     let extensions = ["py"];
     let dir = ".repos/jabref";
-    let vstore_path = ".volumes/vstore";
+    let vstore_dir = Path::new(".volumes/vstore");
     let chunk_size = 512;
 
     // Create base directories if they don't exist
@@ -30,6 +30,7 @@ async fn main() {
     }
 
     let llm_service = llm::LlmService::default();
+
     if is_root(rank) {
         llm_service.check_models().await;
     }
@@ -86,7 +87,7 @@ async fn main() {
 
     // Step 4: Each process stores its vectors
     if !embeddings.is_empty() {
-        let result = process_store_vectors(&embeddings, vstore_path, rank, dim, chunk_size);
+        let result = process_store_vectors(&embeddings, &vstore_dir, rank, dim, chunk_size);
         if let Err(e) = result {
             println!("[Rank {}] Error in vector storage: {}", rank, e);
         }
@@ -99,11 +100,14 @@ async fn main() {
 
     // Step 5: Process 0 merges all storage files
     if is_root(rank) {
-        let result = merge_vector_stores(&world, vstore_path, dim, chunk_size);
+        let result = merge_vector_stores(&world, vstore_dir, dim, chunk_size);
         if let Err(e) = result {
             println!("Error merging vector stores: {}", e);
         }
     }
+
+    // Step 6:
+    let target_vector_index = 0;
 
     // After all MPI operations are done
     world.barrier();
@@ -114,4 +118,3 @@ async fn main() {
     // Clean exit to avoid finalization issues
     mpi_finish(rank);
 }
-
