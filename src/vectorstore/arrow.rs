@@ -1,4 +1,4 @@
-// src/vectorstore/arrow_storage.rs
+// src/vectorstore/arrow.rs
 
 use arrow_array::{Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, UInt32Array};
 use arrow_schema::{DataType, Field, Schema};
@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use super::VectorStorage;
 
-/// Custom error type for Arrow storage operations
 #[derive(Debug)]
 pub enum ArrowStorageError {
     IoError(io::Error),
@@ -298,19 +297,19 @@ impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
         for i in 0..dim {
             array2[[0, i]] = vector[i];
         }
-        
+
         // Append the vector
         self.append_vectors(&array2)
     }
 
     fn append_vectors(&self, new_vectors: &Array2<f32>) -> Result<(), Self::Error> {
         let path_ref = self.path.as_ref();
-        
+
         // If file doesn't exist, just write directly
         if !path_ref.exists() {
             return self.write_slice(new_vectors, 0);
         }
-        
+
         // Get current vectors
         let current_count = self.get_count()?;
         let current_vectors = if current_count > 0 {
@@ -318,26 +317,26 @@ impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
         } else {
             Array2::zeros((0, new_vectors.ncols()))
         };
-        
+
         // Create combined array
         let total_rows = current_vectors.nrows() + new_vectors.nrows();
         let cols = new_vectors.ncols();
         let mut combined = Array2::zeros((total_rows, cols));
-        
+
         // Copy existing vectors
         for i in 0..current_vectors.nrows() {
             for j in 0..cols {
                 combined[[i, j]] = current_vectors[[i, j]];
             }
         }
-        
+
         // Copy new vectors
         for i in 0..new_vectors.nrows() {
             for j in 0..cols {
                 combined[[current_vectors.nrows() + i, j]] = new_vectors[[i, j]];
             }
         }
-        
+
         // Write combined array
         self.write_slice(&combined, 0)
     }
@@ -467,35 +466,29 @@ mod tests {
         let dim = 128;
         let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
-        // Create initial vectors
+        //
         let vectors = create_test_vectors(5, dim);
 
-        // Write initial vectors
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
-        // Verify initial count
         let initial_count = vstore.get_count().unwrap();
         assert_eq!(initial_count, 5);
 
-        // Create a vector to append
         let new_vector = Array1::from_vec((0..128).map(|i| i as f32 / 5.0).collect());
 
-        // Append the vector
         let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
-        
+
         let count = vstore.get_count().unwrap();
         assert_eq!(count, 6);
 
-        // Read back the appended vector
         let read_result = vstore.get_vector(initial_count);
         assert!(read_result.is_ok());
 
         let read_vector = read_result.unwrap();
         assert_eq!(read_vector.len(), 128);
 
-        // Verify data correctness
         for i in 0..128 {
             assert!((new_vector[i] - read_vector[i]).abs() < 1e-5);
         }
@@ -508,14 +501,11 @@ mod tests {
         let dim = 128;
         let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
-        // Create test vectors
         let vectors = create_test_vectors(10, dim);
 
-        // Write vectors
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
-        // Get a specific vector
         let index = 7;
         let get_result = vstore.get_vector(index);
         assert!(get_result.is_ok());
@@ -523,7 +513,6 @@ mod tests {
         let vector = get_result.unwrap();
         assert_eq!(vector.len(), 128);
 
-        // Verify data correctness
         for j in 0..vectors.ncols() {
             assert!((vectors[[index, j]] - vector[j]).abs() < 1e-5);
         }
@@ -535,11 +524,9 @@ mod tests {
         let dim = 128;
         let vstore = ArrowVectorStorage::new(&non_existent_path, dim, 1000);
 
-        // Try to read from non-existent file
         let read_result = vstore.read_slice(0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
 
-        // Try to get vector from non-existent file
         let get_result = vstore.get_vector(0);
         assert!(matches!(get_result, Err(ArrowStorageError::NotFound)));
     }
@@ -551,22 +538,18 @@ mod tests {
         let dim = 1536;
         let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
-        // Create large test vectors
         let count = 100;
         let vectors = create_test_vectors(count, dim);
 
-        // Write vectors
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
-        // Read vectors back
         let read_result = vstore.read_slice(0, count);
         assert!(read_result.is_ok());
 
         let read_vectors = read_result.unwrap();
         assert_eq!(read_vectors.shape(), vectors.shape());
 
-        // Verify data correctness (sample a few points)
         for i in [0, 25, 50, 75, 99] {
             for j in [0, 100, 500, 1000, 1535] {
                 assert!((vectors[[i, j]] - read_vectors[[i, j]]).abs() < 1e-5);
@@ -578,19 +561,16 @@ mod tests {
     fn test_reset_storage() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("vectors.parquet");
-        let dim = 128; // Typical embedding dimension
+        let dim = 128;
         let vstore = ArrowVectorStorage::new(&path, dim, 1000);
 
-        // Create initial storage and write vectors
         let vectors = create_test_vectors(10, dim);
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
-        // Reset storage
         let reset_result = vstore.create_or_load_storage(true);
         assert!(reset_result.is_ok());
 
-        // Verify storage exists but is empty
         let read_result = vstore.read_slice(0, 10);
         assert!(matches!(read_result, Err(ArrowStorageError::NotFound)));
     }
