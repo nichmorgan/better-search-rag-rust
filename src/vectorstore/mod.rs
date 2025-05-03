@@ -1,6 +1,6 @@
 pub mod arrow;
 
-use ndarray::{Array1, Array2, ArrayView1};
+use ndarray::{Array1, Array2};
 
 /// Trait defining operations for storing and retrieving vectors
 pub trait VectorStorage {
@@ -17,7 +17,9 @@ pub trait VectorStorage {
     fn read_slice(&self, start_idx: usize, count: usize) -> Result<Array2<f32>, Self::Error>;
 
     /// Appends a single vector, returns the index
-    fn append_vector(&self, vector: &Array1<f32>) -> Result<usize, Self::Error>;
+    fn append_vector(&self, vector: &Array1<f32>) -> Result<(), Self::Error>;
+
+    fn append_vectors(&self, new_vectors: &Array2<f32>) -> Result<(), Self::Error>;
 
     /// Gets a specific vector by index
     fn get_vector(&self, index: usize) -> Result<Array1<f32>, Self::Error>;

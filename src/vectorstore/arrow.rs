@@ -1,5 +1,6 @@
 // src/vectorstore/arrow_storage.rs
 
+use anyhow::Ok;
 use arrow_array::{Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, UInt32Array};
 use arrow_schema::{DataType, Field, Schema};
 use ndarray::{Array1, Array2};
@@ -280,7 +281,7 @@ impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
 
         // Convert to ndarray format
         let dim = vector_data[0].1.len();
-        let mut result = Array2::zeros((vector_data.len(), dim));
+        let mut result: Array2<f32> = Array2::zeros((vector_data.len(), dim));
 
         for (i, (_, vec)) in vector_data.into_iter().enumerate() {
             for (j, val) in vec.into_iter().enumerate() {
@@ -291,36 +292,55 @@ impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
         Ok(result)
     }
 
-    fn append_vector(&self, vector: &Array1<f32>) -> Result<usize, Self::Error> {
-        let path_ref = self.path.as_ref();
-
-        // Create the file if it doesn't exist
-        if !path_ref.exists() {
-            self.create_or_load_storage(false)?;
-        }
-
-        // Open the Parquet file to read metadata
-        let file = File::open(path_ref)?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-            .map_err(|e| ArrowStorageError::ParquetError(e.to_string()))?;
-
-        // Get row count by reading metadata
-        let metadata = builder.metadata();
-
-        let total_rows = metadata.file_metadata().num_rows() as usize;
-        let new_idx = total_rows;
-
-        // Convert the vector to Array2 for write_slice
+    fn append_vector(&self, vector: &Array1<f32>) -> Result<(), Self::Error> {
+        // Convert the vector to Array2 for append_vectors
         let dim = vector.len();
         let mut array2 = Array2::zeros((1, dim));
         for i in 0..dim {
             array2[[0, i]] = vector[i];
         }
+    
+        // Append the vector
+        self.append_vectors(&array2)
+    }
 
-        // Write the vector using write_slice
-        self.write_slice(&array2, new_idx)?;
-
-        Ok(new_idx)
+    fn append_vectors(&self, new_vectors: &Array2<f32>) -> Result<(), Self::Error> {
+        let path_ref = self.path.as_ref();
+        
+        // If file doesn't exist, just write directly
+        if !path_ref.exists() {
+            return self.write_slice(new_vectors, 0);
+        }
+        
+        // Get current vectors
+        let current_count = self.get_count()?;
+        let current_vectors = if current_count > 0 {
+            self.read_slice(0, current_count)?
+        } else {
+            Array2::zeros((0, new_vectors.ncols()))
+        };
+        
+        // Create combined array
+        let total_rows = current_vectors.nrows() + new_vectors.nrows();
+        let cols = new_vectors.ncols();
+        let mut combined = Array2::zeros((total_rows, cols));
+        
+        // Copy existing vectors
+        for i in 0..current_vectors.nrows() {
+            for j in 0..cols {
+                combined[[i, j]] = current_vectors[[i, j]];
+            }
+        }
+        
+        // Copy new vectors
+        for i in 0..new_vectors.nrows() {
+            for j in 0..cols {
+                combined[[current_vectors.nrows() + i, j]] = new_vectors[[i, j]];
+            }
+        }
+        
+        // Write combined array
+        self.write_slice(&combined, 0)
     }
 
     fn get_vector(&self, index: usize) -> Result<Array1<f32>, Self::Error> {
