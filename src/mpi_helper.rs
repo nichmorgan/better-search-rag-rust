@@ -1,6 +1,6 @@
 use crate::{
     source,
-    vectorstore::{VectorStorage, cosine_distance, arrow::ArrowVectorStorage},
+    vectorstore::{VectorStorage, cosine_distance, polars::PolarsVectorStorage},
 };
 
 use std::{ops::Mul, path::Path};
@@ -108,7 +108,7 @@ pub fn process_store_vectors(
     
     // Create the storage for this rank
     let vstore_path = get_local_vstore_path(vstore_dir, rank);
-    let vstore = ArrowVectorStorage::new(&vstore_path, dimension, chunk_size);
+    let vstore = PolarsVectorStorage::new(&vstore_path, dimension, chunk_size);
     match vstore.create_or_load_storage(true) {
         Ok(_) => println!("[Rank {}] Created process storage file", rank),
         Err(e) => return Err(format!("Error creating storage: {:?}", e)),
@@ -145,7 +145,7 @@ pub fn merge_vector_stores(
 ) -> Result<usize, String> {
     // Create the global storage file
     let global_path = get_global_vstore_path(vstore_dir);
-    let global_vstore = ArrowVectorStorage::new(&global_path, dimension, chunk_size);
+    let global_vstore = PolarsVectorStorage::new(&global_path, dimension, chunk_size);
     match global_vstore.create_or_load_storage(true) {
         Ok(_) => println!("Created final storage file"),
         Err(e) => return Err(format!("Error creating final storage: {:?}", e)),
@@ -163,7 +163,7 @@ pub fn merge_vector_stores(
             continue;
         }
         
-        let rank_vstore = ArrowVectorStorage::new(&rank_path, dimension, chunk_size);
+        let rank_vstore = PolarsVectorStorage::new(&rank_path, dimension, chunk_size);
         let rank_count = match rank_vstore.get_count() {
             Ok(count) => count,
             Err(_) => {
@@ -208,7 +208,7 @@ fn similarity_search<C: Communicator, V: VectorStorage>(
     size: i32,
     top_k: usize,
 ) -> Vec<f32> {
-    let vstore = ArrowVectorStorage::new(get_global_vstore_path(vstore_dir), dimension, chunk_size);
+    let vstore = PolarsVectorStorage::new(get_global_vstore_path(vstore_dir), dimension, chunk_size);
     let vstore_count = vstore.get_count().expect("Fail to get count");
     let target_vector: Array1<f32> = vstore.get_vector(0).expect("Fail to get first vector");
     let rank_interval = interval_by_rank(rank, size, vstore_count);

@@ -1,4 +1,5 @@
 pub mod arrow;
+pub mod polars;
 
 use ndarray::{Array1, Array2};
 
