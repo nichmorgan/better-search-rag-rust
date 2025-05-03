@@ -13,7 +13,7 @@ ndarray = "0.16.1"
 ollama-rs = { version = "0.3.1", default-features = false }
 parquet = {version = "55.0.0", features = ["arrow"] }
 polars = { version = "0.46.0", features = ["ndarray", "parquet"] }
-tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
 walkdir = "2.5.0"
 
 [dev-dependencies]

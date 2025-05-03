@@ -232,8 +232,7 @@ pub fn mpi_finish(rank: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
-    use std::fs;
+    use ndarray::Array1;
     use std::path::Path;
     use tempfile::tempdir;
     use crate::vectorstore::arrow::ArrowVectorStorage;
