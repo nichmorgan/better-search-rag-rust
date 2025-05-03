@@ -15,7 +15,6 @@ pub fn is_root(rank: i32) -> bool {
 }
 
 pub struct RankInterval {
-    pub per_rank: usize,
     pub start_index: usize,
     pub end_index: usize,
 }
@@ -46,7 +45,6 @@ pub fn interval_by_rank(rank: i32, size: i32, count: usize) -> RankInterval {
     };
 
     RankInterval {
-        per_rank,
         start_index,
         end_index,
     }
@@ -257,19 +255,16 @@ mod tests {
     fn test_interval_by_rank() {
         // Equal distribution case
         let interval = interval_by_rank(1, 4, 100);
-        assert_eq!(interval.per_rank, 25);
         assert_eq!(interval.start_index, 25);
         assert_eq!(interval.end_index, 50);
         
         // Last rank with remainder case
         let interval = interval_by_rank(3, 4, 90);
-        assert_eq!(interval.per_rank, 23);
         assert_eq!(interval.start_index, 69);
         assert_eq!(interval.end_index, 90);
         
         // More ranks than items case
         let interval = interval_by_rank(2, 10, 5);
-        assert_eq!(interval.per_rank, 1);
         assert_eq!(interval.start_index, 2);
         assert_eq!(interval.end_index, 3);
     }
@@ -280,14 +275,12 @@ mod tests {
         
         // Middle rank
         let slice_data = slice_by_rank(1, 3, &data);
-        assert_eq!(slice_data.interval.per_rank, 4);
         assert_eq!(slice_data.interval.start_index, 4);
         assert_eq!(slice_data.interval.end_index, 8);
         assert_eq!(slice_data.slice, vec![5, 6, 7, 8]);
         
         // Last rank
         let slice_data = slice_by_rank(2, 3, &data);
-        assert_eq!(slice_data.interval.per_rank, 4);
         assert_eq!(slice_data.interval.start_index, 8);
         assert_eq!(slice_data.interval.end_index, 10);
         assert_eq!(slice_data.slice, vec![9, 10]);

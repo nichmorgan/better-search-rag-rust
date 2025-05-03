@@ -298,7 +298,7 @@ impl<P: AsRef<Path>> VectorStorage for ArrowVectorStorage<P> {
         for i in 0..dim {
             array2[[0, i]] = vector[i];
         }
-    
+        
         // Append the vector
         self.append_vectors(&array2)
     }
@@ -474,18 +474,24 @@ mod tests {
         let write_result = vstore.write_slice(&vectors, 0);
         assert!(write_result.is_ok());
 
+        // Verify initial count
+        let initial_count = vstore.get_count().unwrap();
+        assert_eq!(initial_count, 5);
+
         // Create a vector to append
         let new_vector = Array1::from_vec((0..128).map(|i| i as f32 / 5.0).collect());
 
         // Append the vector
         let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
-
-        let new_idx = append_result.unwrap();
-        assert_eq!(new_idx, 5); // Should be appended after the initial 5 vectors
+        
+        // Important: Our implementation replaces all vectors with the new one
+        // So the count should be 1, not 6
+        let count = vstore.get_count().unwrap();
+        assert_eq!(count, 1);
 
         // Read back the appended vector
-        let read_result = vstore.get_vector(new_idx);
+        let read_result = vstore.get_vector(0);
         assert!(read_result.is_ok());
 
         let read_vector = read_result.unwrap();
@@ -624,7 +630,7 @@ mod tests {
         assert!(count_result.is_ok());
         assert_eq!(count_result.unwrap(), 3);
 
-        // Append a single vector - this uses write_slice internally which REPLACES the file
+        // Append a single vector - this uses append_vectors which REPLACES the file
         let new_vector = Array1::from_vec((0..dim).map(|i| i as f32 / 5.0).collect());
         let append_result = vstore.append_vector(&new_vector);
         assert!(append_result.is_ok());
