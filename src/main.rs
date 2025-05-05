@@ -2,6 +2,7 @@ mod llm;
 mod mpi_helper;
 mod source;
 mod vectorstore;
+mod utils;
 
 use std::{fs, path::Path, time::Instant};
 
@@ -22,7 +23,6 @@ async fn main() {
     let extensions = ["py"];
     let dir = ".repos/jabref";
     let vstore_dir = Path::new(".volumes/vstore");
-    let chunk_size = 512;
 
     // Create base directories if they don't exist
     if is_root(rank) {
@@ -30,6 +30,7 @@ async fn main() {
     }
 
     let llm_service = llm::LlmService::default();
+    let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
 
     if is_root(rank) {
         llm_service.check_models().await;
@@ -87,10 +88,13 @@ async fn main() {
 
     // Step 4: Each process stores its vectors
     if !embeddings.is_empty() {
-        let result = process_store_vectors(&embeddings, &vstore_dir, rank, dim, chunk_size);
+        let result = process_store_vectors(&mut local_vstore, &embeddings, rank);
         if let Err(e) = result {
             println!("[Rank {}] Error in vector storage: {}", rank, e);
         }
+        local_vstore
+            .persist()
+            .expect(&format!("[Rank {}] Fail to persist local vstore", rank));
     } else {
         println!("[Rank {}] No embeddings to store", rank);
     }
@@ -100,14 +104,12 @@ async fn main() {
 
     // Step 5: Process 0 merges all storage files
     if is_root(rank) {
-        let result = merge_vector_stores(size, vstore_dir, dim, chunk_size);
-        if let Err(e) = result {
-            println!("Error merging vector stores: {}", e);
-        }
+        let mut global_vstore = merge_vector_stores(size, vstore_dir).expect("Fail to merging vector stores");
+        global_vstore.persist().expect("Fail to persist global vstore");
     }
 
-    // Step 6:
-    let target_vector_index = 0;
+    // Step 6: Metrics
+    let _target_vector_index = 0;
 
     // After all MPI operations are done
     world.barrier();
