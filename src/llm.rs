@@ -1,8 +1,10 @@
 // src/ollama.rs
 
-use anyhow::{Context, Result};
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::{IntoUrlSealed, Ollama};
+
+pub const DIMENSION: usize = 512;
+pub const MODEL: &str = "nomic-embed-text";
 
 // Client for Ollama API interactions
 #[derive(Default)]
@@ -21,10 +23,7 @@ impl LlmService {
     }
 
     pub fn default() -> Self {
-        Self::new(
-            String::from("http://localhost:11434"),
-            String::from("nomic-embed-text"),
-        )
+        Self::new(String::from("http://localhost:11434"), String::from(MODEL))
     }
 
     pub async fn check_models(&self) {
@@ -43,14 +42,17 @@ impl LlmService {
         println!("Models all set");
     }
 
-    pub async fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>> {
+    pub async fn get_embeddings(
+        &self,
+        texts: &Vec<String>,
+    ) -> Result<Vec<Vec<f32>>, std::fmt::Error> {
         let request =
             GenerateEmbeddingsRequest::new(self.embedding_model.clone(), texts.to_vec().into());
         let response = self
             .client
             .generate_embeddings(request)
             .await
-            .context("Failed to generate embeddings")?;
+            .expect("Failed to generate embeddings");
 
         Ok(response.embeddings)
     }

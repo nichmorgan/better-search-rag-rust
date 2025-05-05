@@ -1,346 +1,398 @@
-// src/vectorstore/polars.rs
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::Path;
 
-use ndarray::{Array1, Array2};
 use polars::prelude::*;
-use tokio::io::AsyncWriteExt;
-use std::{error::Error, fmt, fs::create_dir_all, path::Path};
 
-use super::VectorStorage;
-
-#[derive(Debug)]
-pub enum PolarsStorageError {
-    IoError(std::io::Error),
-    PolarsError(PolarsError),
-    NotFound,
+pub struct PolarsVectorstore {
+    path: String,
+    data: DataFrame,
 }
 
-impl fmt::Display for PolarsStorageError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+pub struct SliceArgs {
+    pub offset: i32,
+    pub length: usize,
+}
+
+enum VstoreColumns {
+    Embeddings,
+}
+
+impl Into<String> for VstoreColumns {
+    fn into(self) -> String {
         match self {
-            PolarsStorageError::IoError(e) => write!(f, "I/O error: {}", e),
-            PolarsStorageError::PolarsError(e) => write!(f, "Polars error: {}", e),
-            PolarsStorageError::NotFound => write!(f, "Resource not found"),
+            VstoreColumns::Embeddings => "embeddings".to_string(),
         }
     }
 }
 
-impl Error for PolarsStorageError {}
-
-impl From<std::io::Error> for PolarsStorageError {
-    fn from(error: std::io::Error) -> Self {
-        PolarsStorageError::IoError(error)
+impl Into<PlSmallStr> for VstoreColumns {
+    fn into(self) -> PlSmallStr {
+        PlSmallStr::from_string(self.into())
     }
 }
 
-impl From<PolarsError> for PolarsStorageError {
-    fn from(error: PolarsError) -> Self {
-        PolarsStorageError::PolarsError(error)
-    }
+fn get_embeddings_dtype() -> DataType {
+    DataType::List(Box::new(DataType::Float32))
 }
 
-pub struct PolarsVectorStorage<P: AsRef<Path>> {
-    path: P,
-    dimension: usize,
-    chunk_size: usize,
+fn get_empty_dataframe() -> DataFrame {
+    let mut empty_df = DataFrame::empty();
+    let empty_df_prepared = empty_df
+        .with_column(Column::new_empty(
+            VstoreColumns::Embeddings.into(),
+            &get_embeddings_dtype(),
+        ))
+        .unwrap();
+    empty_df_prepared.clone()
 }
 
-impl<P: AsRef<Path>> PolarsVectorStorage<P> {
-    pub fn new(path: P, dimension: usize, chunk_size: usize) -> Self {
-        Self { path, dimension, chunk_size }
+fn read_parquet(file_path: &str) -> DataFrame {
+    let path = Path::new(file_path);
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| {
+                    PolarsError::ComputeError(format!("Failed to create directory: {}", e).into())
+                })
+                .unwrap();
+        }
     }
 
-    // Helper method to convert embeddings to a list Series
-    fn embeddings_to_series(&self, vectors: &Array2<f32>) -> Series {
-        // First convert 2D array to Vec of Vecs
-        let vector_data: Vec<Vec<f32>> = vectors
-            .rows()
+    let df = match std::fs::File::open(path) {
+        Ok(mut f) => ParquetReader::new(&mut f).finish().unwrap(),
+        Err(e) => {
+            println!("Fail to load dataframe: {:?}", e);
+
+            // Create an empty dataframe with proper structure
+            let mut empty_df = get_empty_dataframe();
+            let mut file = File::create(path).expect("Failed to create file");
+            ParquetWriter::new(&mut file)
+                .finish(&mut empty_df)
+                .expect("Failed to write Parquet file");
+
+            empty_df.clone()
+        }
+    };
+
+    df
+}
+
+impl PolarsVectorstore {
+    pub fn new(path: &str, empty: bool) -> Self {
+        let lf = if empty {
+            get_empty_dataframe()
+        } else {
+            read_parquet(path)
+        };
+
+        Self {
+            path: path.to_string(),
+            data: lf,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.data.clear();
+    }
+
+    pub fn append(&mut self, vector: &Vec<f32>) -> Result<(), PolarsError> {
+        self.append_many(&vec![vector.to_owned()])
+    }
+
+    pub fn append_many(&mut self, vectors: &Vec<Vec<f32>>) -> Result<(), PolarsError> {
+        // Create Series with explicit List type to ensure consistent serialization
+
+        let column = if vectors.is_empty() {
+            Column::new_empty(VstoreColumns::Embeddings.into(), &get_embeddings_dtype())
+        } else {
+            let vec_series: Vec<Series> = vectors
+                .iter()
+                .map(|r| Series::new("".into(), r.as_slice()))
+                .collect();
+            let series = Series::new("".into(), vec_series);
+            Column::new(VstoreColumns::Embeddings.into(), series)
+        };
+
+        let new_df = DataFrame::new(vec![column])?;
+        self.data = self.data.vstack(&new_df)?;
+
+        Ok(())
+    }
+
+    pub fn get_many(&self, slice: Option<SliceArgs>) -> Result<Vec<Vec<f32>>, PolarsError> {
+        let col_name: String = VstoreColumns::Embeddings.into();
+
+        let data = if let Some(args) = slice {
+            &self.data.slice(args.offset.into(), args.length.into())
+        } else {
+            println!("DataFrame height: {}", self.data.height());
+            &self.data
+        };
+
+        let column = data.column(&col_name)?;
+        println!("Column data type: {:?}", column.dtype());
+        println!("Column length: {}", column.len());
+
+        // Convert column to Vec<Vec<f32>>
+        let list_chunked = column.list()?;
+        println!("List series length: {}", list_chunked.len());
+        println!("List series dtype: {}", list_chunked.dtype());
+
+        let result: Vec<Vec<f32>> = list_chunked
             .into_iter()
-            .map(|row| row.to_vec())
+            .filter_map(|opt_series| {
+                opt_series.map(|inner_series| {
+                    inner_series
+                        .f32()
+                        .unwrap()
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<f32>>()
+                })
+            })
             .collect();
-        
-        // Convert to Series using ListChunked
-        let mut builder = ListPrimitiveChunkedBuilder::<Float32Type>::new("vector".into(), vector_data.len(), vector_data.len() * self.dimension, DataType::Float32);
-        
-        for vec in vector_data {
-            builder.append_slice(&vec);
-        }
-        
-        builder.finish().into_series()
-    }
-    
-    // Helper to create DataFrame with embeddings
-    fn create_df(&self, vectors: &Array2<f32>, start_idx: usize) -> Result<DataFrame, PolarsStorageError> {
-        let num_vectors = vectors.nrows();
-        
-        // Create ID column
-        let ids: Vec<u32> = (start_idx..start_idx + num_vectors)
-            .map(|i| i as u32)
-            .collect();
-        
-        let id_series = UInt32Chunked::new("id".into(), &ids).into_series();
-        let vector_series = self.embeddings_to_series(vectors);
-        
-        let df = DataFrame::new(vec![id_series.into(), vector_series.into()])?;
-        Ok(df)
-    }
-    
-    // Helper to read DataFrame from file
-    fn read_df(&self) -> Result<DataFrame, PolarsStorageError> {
-        let path_ref = self.path.as_ref();
-        
-        if !path_ref.exists() {
-            return Err(PolarsStorageError::NotFound);
-        }
-        
-        let df = ParquetReader::new(std::fs::File::open(path_ref)?)
-            .finish()?;
-            
-        Ok(df)
-    }
-    
-    // Helper to extract embeddings from DataFrame
-    fn extract_embeddings(&self, df: &DataFrame, start_idx: usize, count: usize) -> Result<Array2<f32>, PolarsStorageError> {
-        let id_col = df.column("id")?.u32()?;
-        
-        // Create the logical mask for filtering
-        let mask = id_col.clone().into_series().is_between(
-            Expr::Literal(LiteralValue::UInt32(start_idx as u32)),
-            Expr::Literal(LiteralValue::UInt32((start_idx + count - 1) as u32)),
-            true
-        );
-        
-        let filtered = df.filter(&mask)?;
-            
-        if filtered.height() == 0 {
-            return Err(PolarsStorageError::NotFound);
-        }
-        
-        let vectors = filtered.column("vector")?;
-        
-        // Convert list Series to Array2
-        let mut result = Array2::zeros((filtered.height(), self.dimension));
-        
-        let list_column = vectors.list()?;
-        for (i, row_opt) in list_column.iter().enumerate() {
-            if let Some(row) = row_opt {
-                let row_values = row.to_vec();
-                if row_values.len() == self.dimension {
-                    for (j, val) in row_values.into_iter().enumerate() {
-                        if let AnyValue::Float32(v) = val {
-                            result[[i, j]] = v;
-                        } else if let AnyValue::Float64(v) = val {
-                            result[[i, j]] = v as f32;
-                        }
-                    }
-                }
-            }
-        }
-        
+
+        println!("Final result length: {}", result.len());
         Ok(result)
     }
-}
 
-impl<P: AsRef<Path>> VectorStorage for PolarsVectorStorage<P> {
-    type Error = PolarsStorageError;
-
-    fn create_or_load_storage(&self, reset: bool) -> Result<(), Self::Error> {
-        let path_ref = self.path.as_ref();
-        
-        // Check if file exists and handle reset flag
-        if path_ref.exists() {
-            if reset {
-                std::fs::remove_file(path_ref)?;
-            } else {
-                return Ok(());
-            }
+    pub fn get(&self, index: usize) -> Result<Vec<f32>, PolarsError> {
+        match self
+            .get_many(Some(SliceArgs {
+                offset: index as i32,
+                length: 1,
+            }))?
+            .get(0)
+        {
+            Some(val) => Ok(val.clone()),
+            None => Err(PolarsError::NoData("Index not found".into())),
         }
-        
-        // Ensure parent directory exists
-        if let Some(parent) = path_ref.parent() {
+    }
+
+    pub fn reload(&mut self, force: bool) -> Result<(), PolarsError> {
+        let new_df = read_parquet(&self.path);
+        let nrows = new_df.height();
+
+        if nrows == 0 && !force {
+            return Err(PolarsError::NoData("Found a empty or invalid file".into()));
+        }
+        self.data = new_df;
+
+        Ok(())
+    }
+
+    pub fn persist(&mut self) -> Result<(), PolarsError> {
+        let path = Path::new(&self.path);
+
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = path.parent() {
             if !parent.exists() {
-                create_dir_all(parent)?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    PolarsError::ComputeError(format!("Failed to create directory: {}", e).into())
+                })?;
             }
         }
-        
-        // Create empty DataFrame with proper schema
-        let empty_ids: Vec<u32> = Vec::new();
-        let id_series = UInt32Chunked::new("id".into(), empty_ids).into_series();
-        let empty_list: Vec<Vec<f32>> = vec![];
-        
-        let mut builder = ListPrimitiveChunkedBuilder::<Float32Type>::new("vector".into(), 0, 0, DataType::Float32);
-        let vector_series = builder.finish().into_series();
-        
-        let mut df = DataFrame::new(vec![id_series.into(), vector_series.into])?;
-        
-        // Write empty DataFrame to Parquet
-        ParquetWriter::new(std::fs::File::create(path_ref)?)
-            .with_compression(ParquetCompression::Snappy)
-            .finish(&mut df)?;
-            
-        Ok(())
-    }
 
-    fn write_slice(&self, vectors: &Array2<f32>, start_idx: usize) -> Result<(), Self::Error> {
-        let path_ref = self.path.as_ref();
-        
-        // Create file if it doesn't exist
-        if !path_ref.exists() {
-            self.create_or_load_storage(false)?;
-        }
-        
-        // Create DataFrame from vectors
-        let mut df = self.create_df(vectors, start_idx)?;
-        
-        // Write to Parquet file
-        ParquetWriter::new(std::fs::File::create(path_ref)?)
-            .with_compression(ParquetCompression::Snappy)
-            .finish(&mut df)?;
-            
-        Ok(())
-    }
+        println!("DataFrame schema before writing: {:?}", self.data.schema());
+        println!("DataFrame height before writing: {}", self.data.height());
 
-    fn read_slice(&self, start_idx: usize, count: usize) -> Result<Array2<f32>, Self::Error> {
-        let df = self.read_df()?;
-        self.extract_embeddings(&df, start_idx, count)
-    }
-
-    fn append_vector(&self, vector: &Array1<f32>) -> Result<(), Self::Error> {
-        // Convert Array1 to Array2 for append_vectors
-        let dim = vector.len();
-        let mut array2 = Array2::zeros((1, dim));
-        for i in 0..dim {
-            array2[[0, i]] = vector[i];
-        }
-        
-        self.append_vectors(&array2)
-    }
-
-    fn append_vectors(&self, new_vectors: &Array2<f32>) -> Result<(), Self::Error> {
-        let path_ref = self.path.as_ref();
-        
-        // If file doesn't exist, just write directly
-        if !path_ref.exists() {
-            return self.write_slice(new_vectors, 0);
-        }
-        
-        // Read existing DataFrame
-        let existing_df = self.read_df()?;
-        let current_count = existing_df.height();
-        
-        // Create DataFrame from new vectors
-        let new_df = self.create_df(new_vectors, current_count)?;
-        
-        // Concatenate DataFrames
-        let mut combined_df = existing_df.vstack(&new_df)?;
-        
-        // Write back to file
-        ParquetWriter::new(std::fs::File::create(path_ref)?)
-            .with_compression(ParquetCompression::Snappy)
-            .finish(&mut combined_df)?;
-            
-        Ok(())
-    }
-
-    fn get_vector(&self, index: usize) -> Result<Array1<f32>, Self::Error> {
-        let df = self.read_df()?;
-        
-        // Create mask for the specific ID
-        let id_filter = df.column("id")?.u32()?.equal(index as u32);
-        let filtered = df.filter(&id_filter)?;
-        
-        if filtered.height() == 0 {
-            return Err(PolarsStorageError::NotFound);
-        }
-        
-        let vector_col = filtered.column("vector")?.list()?;
-        
-        if let Some(vector_data) = vector_col.get(0) {
-            let values = vector_data.to_vec();
-            let mut result = Array1::zeros(self.dimension);
-            
-            for (i, val) in values.into_iter().enumerate() {
-                if i >= self.dimension {
-                    break;
+        {
+            // Use a block to ensure file is closed properly
+            let mut file = match File::create(path) {
+                Ok(f) => f,
+                Err(e) => {
+                    return Err(PolarsError::ComputeError(
+                        format!("Error creating file: {}", e).into(),
+                    ));
                 }
-                
-                match val {
-                    AnyValue::Float32(v) => result[i] = v,
-                    AnyValue::Float64(v) => result[i] = v as f32,
-                    _ => return Err(PolarsStorageError::PolarsError(PolarsError::ComputeError(
-                        "Invalid vector data type".into()
-                    ))),
+            };
+
+            // Make sure to use consistent options when writing parquet
+            let parquet_options = ParquetWriteOptions::default();
+            match ParquetWriter::new(&mut file)
+                .with_compression(parquet_options.compression)
+                .with_data_page_size(parquet_options.data_page_size)
+                .with_row_group_size(parquet_options.row_group_size)
+                .with_statistics(parquet_options.statistics)
+                .finish(&mut self.data)
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Fail to write parquet: {:?}", e);
+                    return Err(e);
                 }
+            };
+
+            if let Err(e) = file.flush() {
+                return Err(PolarsError::ComputeError(
+                    format!("Error flushing file: {}", e).into(),
+                ));
             }
-            
-            Ok(result)
-        } else {
-            Err(PolarsStorageError::NotFound)
         }
+
+        if !path.exists() {
+            return Err(PolarsError::ComputeError(
+                format!("File was not created: {}", path.display()).into(),
+            ));
+        }
+
+        let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        println!("File written successfully, size: {} bytes", file_size);
+
+        Ok(())
     }
 
-    fn get_count(&self) -> Result<usize, Self::Error> {
-        if !self.path.as_ref().exists() {
-            return Ok(0);
-        }
-        
-        let df = self.read_df()?;
-        Ok(df.height())
+    pub fn get_count(&self) -> Result<usize, PolarsError> {
+        let count = self.data.height();
+        Ok(count)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::mpi_helper::get_global_vstore;
+    use crate::utils::tests::*;
+
     use super::*;
-    use ndarray::Array;
-    use tempfile::tempdir;
 
-    fn create_test_vectors(count: usize, dim: usize) -> Array2<f32> {
-        let mut data = Vec::with_capacity(count * dim);
-        for i in 0..count {
-            for j in 0..dim {
-                data.push((i * dim + j) as f32 / 10.0);
-            }
-        }
-        Array::from_shape_vec((count, dim), data).unwrap()
+    #[test]
+    fn test_new_vectorstore() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 3;
+        sample_vstore(&mut store, n);
+
+        assert_eq!(store.data.height(), n);
+
+        dir.close().unwrap_or_default();
     }
 
     #[test]
-    fn test_create_storage() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vectors.parquet");
-        let vstore = PolarsVectorStorage::new(&path, 128, 1000);
+    fn test_append_vector() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 1;
+        let sample = sample_vstore(&mut store, n);
 
-        let result = vstore.create_or_load_storage(false);
+        let new_vector = generate_mock_embeddings();
+        store.append(&new_vector).unwrap();
+
+        let result = store.get_many(None).unwrap();
+        println!("Count: {}", store.get_count().unwrap());
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], sample[0]);
+
+        dir.close().unwrap_or_default();
+    }
+
+    #[test]
+    fn test_append_many_vectors() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 3;
+        sample_vstore(&mut store, n);
+
+        let new_vectors = vec![generate_mock_embeddings(), generate_mock_embeddings()];
+        store.append_many(&new_vectors).unwrap();
+
+        let result = store
+            .get_many(Some(SliceArgs {
+                offset: n as i32,
+                length: new_vectors.len(),
+            }))
+            .unwrap();
+        assert_eq!(result.len(), new_vectors.len());
+        assert_eq!(result[0], new_vectors[0]);
+        assert_eq!(result[1], new_vectors[1]);
+
+        dir.close().unwrap_or_default();
+    }
+
+    #[test]
+    fn test_read_slice() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 3;
+        let sample = sample_vstore(&mut store, n);
+
+        // Read a slice from the middle
+        let result = store
+            .get_many(Some(SliceArgs {
+                offset: 1,
+                length: 1,
+            }))
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], sample[1]);
+
+        // Read multiple rows
+        let result = store.get_many(None).unwrap();
+        assert_eq!(result.len(), n);
+        assert_eq!(result[0], sample[0]);
+        assert_eq!(result[1], sample[1]);
+        assert_eq!(result[2], sample[2]);
+
+        dir.close().unwrap_or_default();
+    }
+
+    #[test]
+    fn test_persist_and_reload() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 3;
+        sample_vstore(&mut store, n);
+
+        store.append(&generate_mock_embeddings()).unwrap();
+        store.persist().unwrap();
+
+        let new_store = get_global_vstore(dir.path(), false);
+        let result = new_store.get_many(None).unwrap();
+        assert_eq!(result.len(), n + 1);
+
+        dir.close().unwrap_or_default()
+    }
+
+    #[test]
+    fn test_empty_file_reload() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(&dir.path(), true);
+
+        let result = store.reload(false);
+        assert!(result.is_err());
+
+        let result = store.reload(true);
         assert!(result.is_ok());
-        assert!(path.exists());
+
+        dir.close().unwrap_or_default();
     }
 
     #[test]
-    fn test_write_and_read_slice() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("vectors.parquet");
-        let dim = 128;
-        let vstore = PolarsVectorStorage::new(&path, dim, 1000);
+    fn test_large_dataset() {
+        let dir = get_vstore_dir();
+        let mut store = get_global_vstore(dir.path(), true);
+        let n = 1000;
+        sample_vstore(&mut store, n);
 
-        // Create test vectors
-        let vectors = create_test_vectors(10, dim);
+        let result = store
+            .get_many(Some(SliceArgs {
+                offset: 0,
+                length: 100,
+            }))
+            .unwrap();
+        assert_eq!(result.len(), 100);
 
-        // Write vectors
-        let write_result = vstore.write_slice(&vectors, 0);
-        assert!(write_result.is_ok());
+        let result = store
+            .get_many(Some(SliceArgs {
+                offset: 500,
+                length: 200,
+            }))
+            .unwrap();
+        assert_eq!(result.len(), 200);
 
-        // Read vectors back
-        let read_result = vstore.read_slice(0, 10);
-        assert!(read_result.is_ok());
+        let result = store.get_many(None).unwrap();
+        assert_eq!(result.len(), 1000);
 
-        let read_vectors = read_result.unwrap();
-        assert_eq!(read_vectors.shape(), vectors.shape());
-
-        // Verify data correctness
-        for i in 0..vectors.nrows() {
-            for j in 0..vectors.ncols() {
-                assert!((vectors[[i, j]] - read_vectors[[i, j]]).abs() < 1e-5);
-            }
-        }
+        dir.close().unwrap_or_default();
     }
 }
