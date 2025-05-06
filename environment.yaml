@@ -1,0 +1,9 @@
+name: onnx-exporter
+packages:
+  - conda-forge
+  - defaults
+dependencies:
+  - pip
+  - pip:
+    - optimum[exporters]
+    - einops

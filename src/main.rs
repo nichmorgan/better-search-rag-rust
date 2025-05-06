@@ -6,6 +6,7 @@ mod utils;
 
 use std::{fs, path::Path, time::Instant};
 
+use llm::LlmService;
 use mpi::traits::*;
 
 use mpi_helper::*;
@@ -29,13 +30,8 @@ async fn main() {
         fs::create_dir_all(".volumes").unwrap_or_default();
     }
 
-    let llm_service = llm::LlmService::default();
+    let llm_service = llm::hf::HfService::default().expect(&format!("[Rank {}] Fail to load llm service", rank));
     let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
-
-    if is_root(rank) {
-        llm_service.check_models().await;
-    }
-    world.barrier();
 
     // Step 1: Read files distributed across processes
     let start = Instant::now();
@@ -53,7 +49,6 @@ async fn main() {
     let embeddings = if !rank_contents.is_empty() {
         llm_service
             .get_embeddings(&rank_contents)
-            .await
             .expect("Failed to embed")
     } else {
         Vec::new()
@@ -65,6 +60,7 @@ async fn main() {
         embeddings.len(),
         elapsed.as_secs()
     );
+    println!("[Rank {}] Embeddings: {:?}", rank, embeddings);
 
     // Step 3: Get embedding dimensions and coordinate across processes
     let mut dim = if !embeddings.is_empty() {

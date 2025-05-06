@@ -3,7 +3,9 @@ pub mod tests {
     use rand::Rng;
     use tempfile::{tempdir, TempDir};
 
-    use crate::{llm::DIMENSION, vectorstore::polars::PolarsVectorstore};
+    use crate::vectorstore::polars::PolarsVectorstore;
+
+    pub const DIMENSION: usize = 768;
 
     pub fn get_vstore_dir() -> TempDir {
         tempdir().unwrap()
