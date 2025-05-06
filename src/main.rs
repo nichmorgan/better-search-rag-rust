@@ -1,15 +1,20 @@
 mod llm;
+mod metrics;
 mod mpi_helper;
 mod source;
-mod vectorstore;
 mod utils;
+mod vectorstore;
 
 use std::{fs, path::Path, time::Instant};
 
 use llm::LlmService;
-use mpi::traits::*;
+use mpi::{collective::SystemOperation, traits::*};
 
 use mpi_helper::*;
+
+fn generate_msg(rank: i32, message: &str) -> String {
+    format!("[Rank {}] {}", rank, message)
+}
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +26,7 @@ async fn main() {
 
     println!("Process {} of {} initialized", rank, size);
 
-    let extensions = ["py"];
+    let extensions = ["java"];
     let dir = ".repos/jabref";
     let vstore_dir = Path::new(".volumes/vstore");
 
@@ -30,7 +35,8 @@ async fn main() {
         fs::create_dir_all(".volumes").unwrap_or_default();
     }
 
-    let llm_service = llm::hf::HfService::default().expect(&format!("[Rank {}] Fail to load llm service", rank));
+    let llm_service =
+        llm::hf::HfService::default().expect(&generate_msg(rank, "Fail to load llm service"));
     let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
 
     // Step 1: Read files distributed across processes
@@ -60,7 +66,6 @@ async fn main() {
         embeddings.len(),
         elapsed.as_secs()
     );
-    println!("[Rank {}] Embeddings: {:?}", rank, embeddings);
 
     // Step 3: Get embedding dimensions and coordinate across processes
     let mut dim = if !embeddings.is_empty() {
@@ -90,7 +95,7 @@ async fn main() {
         }
         local_vstore
             .persist()
-            .expect(&format!("[Rank {}] Fail to persist local vstore", rank));
+            .expect(&generate_msg(rank, "Fail to persist local vstore"));
     } else {
         println!("[Rank {}] No embeddings to store", rank);
     }
@@ -100,12 +105,56 @@ async fn main() {
 
     // Step 5: Process 0 merges all storage files
     if is_root(rank) {
-        let mut global_vstore = merge_vector_stores(size, vstore_dir).expect("Fail to merging vector stores");
-        global_vstore.persist().expect("Fail to persist global vstore");
+        merge_vector_stores(size, vstore_dir)
+            .expect(&generate_msg(rank, "Fail to merging vector stores"))
+            .persist()
+            .expect(&generate_msg(rank, "Fail to persist global vstore"));
     }
 
     // Step 6: Metrics
-    let _target_vector_index = 0;
+    let top_k = 50;
+    let (local_distance_indexes, local_distances): (Vec<_>, Vec<_>) =
+        similarity_search(vstore_dir, rank, size, top_k)
+            .expect(&generate_msg(rank, "Fail to calculate similarity search"))
+            .iter()
+            .cloned()
+            .unzip();
+    println!("[Rank {}] distances: {:?}", rank, local_distances);
+
+    let mut total_distances: usize = 0;
+    world.all_reduce_into(
+        &local_distances.len(),
+        &mut total_distances,
+        SystemOperation::sum(),
+    );
+
+    let mut global_distance_indexes = vec![0usize; total_distances];
+    let mut global_distances = vec![0f32; total_distances];
+    world.all_gather_into(&local_distance_indexes, &mut global_distance_indexes[..]);
+    world.all_gather_into(&local_distances, &mut global_distances[..]);
+
+    if is_root(rank) {
+        let mut global_distances: Vec<(&usize, &f32)> = global_distance_indexes
+            .iter()
+            .zip(global_distances.iter())
+            .collect();
+        global_distances.sort_by(|(_, a), (_, b)| b.partial_cmp(&a).unwrap());
+
+        let mut global_index_topk: Vec<&usize> = vec![];
+        let mut global_topk: Vec<(&usize, &f32)> = vec![];
+        for (idx, dist) in global_distances.iter().cloned() {
+            if global_index_topk.len() == top_k {
+                break;
+            }
+            if global_index_topk.contains(&idx) {
+                continue;
+            }
+            global_index_topk.push(idx);
+            global_topk.push((idx, dist));
+        }
+
+        println!("global_topk: {:?}", global_topk);
+    }
 
     // After all MPI operations are done
     world.barrier();

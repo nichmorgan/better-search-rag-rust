@@ -47,14 +47,12 @@ impl LlmService for HfService {
     // }
 
     fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>> {
-        
         if texts.is_empty() {
             return Ok(vec![]);
         }
         if texts.iter().any(|v| v.is_empty()) {
             return Err(Error::new("Invalid inputs: has empty values"));
         }
-
 
         // Encode our input strings. `encode_batch` will pad each input to be the same length.
         let encodings = self
@@ -63,6 +61,23 @@ impl LlmService for HfService {
             .map_err(|e| Error::new(e.to_string()))?;
         // Get the padded length of each encoding.
         let padded_token_length = encodings[0].len();
+
+        let has_same_shape = encodings.iter().all(|v| v.len() == padded_token_length);
+        if !has_same_shape {
+            let mut shape_example: Vec<&str> = Vec::new();
+            let mut shapes: Vec<usize> = Vec::new();
+            encodings.iter().enumerate().for_each(|(i, v)| {
+                let v_len = v.len();
+                if !shapes.contains(&v_len) {
+                    shapes.push(v_len);
+                    shape_example.push(&texts[i]);
+                }
+            });
+            println!(
+                "Shape inconsistent: {:?}",
+                shapes
+            );
+        }
 
         // Get our token IDs & mask as a flattened array.
         let ids: Vec<i64> = encodings
@@ -75,6 +90,7 @@ impl LlmService for HfService {
             .collect();
 
         // Convert our flattened arrays into 2-dimensional tensors of shape [N, L].
+        // TODO: make exception log better
         let a_ids = Array2::from_shape_vec([texts.len(), padded_token_length], ids).unwrap();
         let a_mask = Array2::from_shape_vec([texts.len(), padded_token_length], mask).unwrap();
 
@@ -227,7 +243,10 @@ mod tests {
 
         // Basic assertions
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap().message(), "Invalid inputs: has empty values");
+        assert_eq!(
+            result.err().unwrap().message(),
+            "Invalid inputs: has empty values"
+        );
 
         Ok(())
     }

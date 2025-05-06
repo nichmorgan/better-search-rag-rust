@@ -1,14 +1,14 @@
 use crate::{
     source,
-    vectorstore::{
-        VectorStorage, cosine_distance,
-        polars::{PolarsVectorstore, SliceArgs},
-    },
+    vectorstore::
+        polars::{PolarsVectorstore, SliceArgs}
+    ,
+    metrics::cosine_distance,
 };
-
 use std::{ops::Mul, path::Path};
 
 use mpi::traits::*;
+use polars::error::PolarsError;
 
 pub const ROOT: i32 = 0;
 
@@ -166,34 +166,30 @@ pub fn merge_vector_stores(size: i32, vstore_dir: &Path) -> Result<PolarsVectors
     Ok(global_vstore)
 }
 
-fn similarity_search<C: Communicator, V: VectorStorage>(
+pub fn similarity_search(
     vstore_dir: &Path,
     rank: i32,
     size: i32,
     top_k: usize,
-) -> Vec<f32> {
-    let vstore = get_global_vstore(vstore_dir, true);
-    let vstore_count = vstore.get_count().expect("Fail to get count");
-    let vstore_first = vstore
-        .get_many(Some(SliceArgs {
-            offset: 0,
-            length: 1,
-        }))
-        .expect("Fail to get first vector");
-    let target_vector = vstore_first.get(0).unwrap();
+) -> Result<Vec<(usize, f32)>, PolarsError> {
+    let vstore = get_global_vstore(vstore_dir, false);
+    let vstore_count = vstore.get_count()?;
+    let target_vector = vstore
+        .get(0)?;
     let rank_interval = interval_by_rank(rank, size, vstore_count);
     let rank_vectors = vstore
         .get_many(Some(SliceArgs {
             offset: rank_interval.start_index as i32,
             length: rank_interval.get_count(),
-        }))
-        .expect("Fail to read slice");
-    let mut distances: Vec<f32> = rank_vectors
+        }))?;
+    let mut distances: Vec<(usize, f32)> = rank_vectors
         .iter()
-        .map(|v| cosine_distance(v, &target_vector))
+        .enumerate()
+        .map(|(i, v)| (i, cosine_distance(v, &target_vector)))
         .collect();
-    distances.sort_by(|a, b| b.partial_cmp(&a).unwrap());
-    distances.iter().take(top_k).cloned().collect()
+    distances.sort_by(|(_, a), (_, b)| b.partial_cmp(&a).unwrap());
+    
+    Ok(distances.iter().take(top_k).cloned().collect())
 }
 
 pub fn mpi_finish(rank: i32) {
