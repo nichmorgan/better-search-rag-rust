@@ -62,7 +62,7 @@ fn read_parquet(file_path: &str) -> DataFrame {
     let df = match std::fs::File::open(path) {
         Ok(mut f) => ParquetReader::new(&mut f).finish().unwrap(),
         Err(e) => {
-            println!("Fail to load dataframe: {:?}", e);
+            // println!("Fail to load dataframe: {:?}", e);
 
             // Create an empty dataframe with proper structure
             let mut empty_df = get_empty_dataframe();
@@ -126,18 +126,18 @@ impl PolarsVectorstore {
         let data = if let Some(args) = slice {
             &self.data.slice(args.offset.into(), args.length.into())
         } else {
-            println!("DataFrame height: {}", self.data.height());
+            // println!("DataFrame height: {}", self.data.height());
             &self.data
         };
 
         let column = data.column(&col_name)?;
-        println!("Column data type: {:?}", column.dtype());
-        println!("Column length: {}", column.len());
+        // println!("Column data type: {:?}", column.dtype());
+        // println!("Column length: {}", column.len());
 
         // Convert column to Vec<Vec<f32>>
         let list_chunked = column.list()?;
-        println!("List series length: {}", list_chunked.len());
-        println!("List series dtype: {}", list_chunked.dtype());
+        // println!("List series length: {}", list_chunked.len());
+        // println!("List series dtype: {}", list_chunked.dtype());
 
         let result: Vec<Vec<f32>> = list_chunked
             .into_iter()
@@ -153,7 +153,7 @@ impl PolarsVectorstore {
             })
             .collect();
 
-        println!("Final result length: {}", result.len());
+        // println!("Final result length: {}", result.len());
         Ok(result)
     }
 
@@ -194,8 +194,8 @@ impl PolarsVectorstore {
             }
         }
 
-        println!("DataFrame schema before writing: {:?}", self.data.schema());
-        println!("DataFrame height before writing: {}", self.data.height());
+        // println!("DataFrame schema before writing: {:?}", self.data.schema());
+        // println!("DataFrame height before writing: {}", self.data.height());
 
         {
             // Use a block to ensure file is closed properly
@@ -219,7 +219,7 @@ impl PolarsVectorstore {
             {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Fail to write parquet: {:?}", e);
+                    // println!("Fail to write parquet: {:?}", e);
                     return Err(e);
                 }
             };
@@ -238,7 +238,7 @@ impl PolarsVectorstore {
         }
 
         let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        println!("File written successfully, size: {} bytes", file_size);
+        // println!("File written successfully, size: {} bytes", file_size);
 
         Ok(())
     }
@@ -279,7 +279,7 @@ mod tests {
         store.append(&new_vector).unwrap();
 
         let result = store.get_many(None).unwrap();
-        println!("Count: {}", store.get_count().unwrap());
+        // println!("Count: {}", store.get_count().unwrap());
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], sample[0]);
 

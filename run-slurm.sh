@@ -7,16 +7,36 @@
 #SBATCH --error=.logs/%j_slurm.err
 #SBATCH --time=00:10:00
 
+module purge
 
 OUT_FILE="./target/release/better-search-rag-rust"
-export OLLAMA_MODELS=".volumes/ollama/"
+MODEL_DIR=".volumes/models/nomic_embed_text_onnx/"
+MODEL_NAME="nomic-ai/nomic-embed-text-v1.5"
 
-module load openmpi llvm ollama
+
+# Check if force parameter is provided
+if [ "$1" = "force" ]; then
+    echo "Force flag detected. Removing model directory if it exists..."
+    rm -rf "$MODEL_DIR"
+fi
+
+# Check if model directory exists
+if [ ! -d "$MODEL_DIR" ]; then
+    echo "Model directory doesn't exist. Running export command..."
+
+    module load anaconda3 
+    conda env update -f environment.yaml -p .venv
+
+    conda activate .venv/
+    optimum-cli export onnx --model $MODEL_NAME $MODEL_DIR --trust-remote-code
+    conda deactivate
+else
+    echo "Model directory already exists. Skipping export command."
+fi
+
+module load openmpi
 
 cargo build --release
 chmod +x $OUT_FILE
 
-ollama serve &
 $OUT_FILE
-
-

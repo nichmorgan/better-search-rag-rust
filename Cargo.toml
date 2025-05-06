@@ -10,11 +10,15 @@ arrow-schema = "55.0.0"
 mpi = { version = "0.8.0", features = [] }
 ndarray = "0.16.1"
 ollama-rs = { version = "0.3.1", default-features = false }
+ort = "=2.0.0-rc.9"
 parquet = {version = "55.0.0", features = ["arrow"] }
-polars = { version = "0.47.0", features = ["ndarray", "parquet", "lazy", "dtype-array"] }
+polars = { version = "=0.47.0", features = ["ndarray", "parquet", "lazy", "dtype-array", "streaming"] }
+tokenizers = "0.21.1"
 tokio = { version = "1.44.2", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [ "env-filter", "fmt" ] }
 walkdir = "2.5.0"
 
 [dev-dependencies]
+mockall = { version = "0.13.1", features = [] }
 rand = "0.9.1"
 tempfile = "3.8.1"
