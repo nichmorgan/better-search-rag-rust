@@ -3,6 +3,7 @@ pub mod metrics;
 pub mod source;
 pub mod tasks;
 pub mod vectorstore;
+pub mod benchmark;
 
 pub const ROOT: i32 = 0;
 
