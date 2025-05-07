@@ -74,6 +74,7 @@ async fn main() {
                 .expect(&generate_msg(rank, "Fail to persist global vstore"));
         }
     }
+    world.barrier();
 
     // Step 6: Metrics calculation - Top-k similarity search
     let top_k = 50;
@@ -82,10 +83,15 @@ async fn main() {
     // Perform parallel top-k similarity search
     let mut target_vector = vec![0.0; 768]; // Placeholder for the target vector
     if is_root(rank) {
+        println!("[Rank {}] Generating target vector", rank);
         target_vector = llm_service.get_embeddings(vec!["Hello, world!".to_string()].as_ref()).unwrap()[0].clone();
     }
-    world.this_process().broadcast_into(&mut target_vector);
+    println!("[Rank {}] Broadcasting target vector", rank);
+    world.process_at_rank(ROOT).broadcast_into(&mut target_vector);
+    println!("[Rank {}] Target vector broadcasted", rank);
+    println!("[Rank {}] Starting top-k similarity search", rank);
 
+    // Perform the top-k similarity search
     let global_top_k = parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k, &target_vector);
 
     // Root process handles the results and metrics calculation
