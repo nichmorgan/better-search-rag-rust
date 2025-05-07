@@ -80,7 +80,13 @@ async fn main() {
     let query_idx = 0; // Using the first vector as the query
 
     // Perform parallel top-k similarity search
-    let global_top_k = parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k);
+    let mut target_vector = vec![0.0; 768]; // Placeholder for the target vector
+    if is_root(rank) {
+        target_vector = llm_service.get_embeddings(vec!["Hello, world!".to_string()].as_ref()).unwrap()[0].clone();
+    }
+    world.this_process().broadcast_into(&mut target_vector);
+
+    let global_top_k = parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k, &target_vector);
 
     // Root process handles the results and metrics calculation
     if is_root(rank) {

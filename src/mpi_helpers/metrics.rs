@@ -18,10 +18,10 @@ pub fn compute_local_top_k(
     rank: i32,
     size: i32,
     top_k: usize,
+    target_vector: &Vec<f32>,
 ) -> Result<Vec<(usize, f32)>, PolarsError> {
     let vstore = get_global_vstore(vstore_dir, false);
     let vstore_count = vstore.get_count()?;
-    let target_vector = vstore.get(0)?;
 
     // Determine the portion of vectors this rank should process
     let rank_interval = interval_by_rank(rank, size, vstore_count);
@@ -177,11 +177,12 @@ pub fn parallel_top_k_similarity_search<C: Communicator>(
     size: i32,
     vstore_dir: &Path,
     top_k: usize,
+    target_vector: &Vec<f32>
 ) -> Option<Vec<(usize, f32)>> {
     println!("[Rank {}] Calculating top-{} distances", rank, top_k);
 
     // Compute local top-k
-    let local_top_k = match compute_local_top_k(vstore_dir, rank, size, top_k) {
+    let local_top_k = match compute_local_top_k(vstore_dir, rank, size, top_k, target_vector) {
         Ok(results) => results,
         Err(err) => {
             println!("[Rank {}] Error in similarity search: {:?}", rank, err);
