@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use mpi::traits::Communicator;
+use mpi::collective::CommunicatorCollectives; // Import the trait for barrier
 
 use crate::{
     llm::LlmService,

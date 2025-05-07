@@ -1,16 +1,16 @@
-use mpi::collective::CommunicatorCollectives;
-use mpi::point_to_point::Status;
+// mpi_helpers/metrics.rs
+
+use mpi::collective::CommunicatorCollectives; // Import the trait for barrier
 use mpi::traits::*;
-use polars::error::PolarsError;
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::mpi_helpers::{is_root, ROOT};
+use crate::mpi_helpers::load_balance::interval_by_rank;
+use crate::mpi_helpers::vectorstore::get_global_vstore;
 use crate::metrics::cosine_distance;
 use crate::vectorstore::polars::SliceArgs;
-
-use super::is_root;
-use super::load_balance::interval_by_rank;
-use super::vectorstore::get_global_vstore;
+use polars::error::PolarsError;
 
 // Improved version of similarity_search that returns top-k local results
 pub fn compute_local_top_k(
@@ -82,14 +82,58 @@ pub fn gather_top_k_results<C: Communicator>(
         vec![]
     };
 
-    // Gather data from all processes to root
-    world
-        .this_process()
-        .gather_varcount_into_root(&local_indices[..], &mut global_indices[..]);
-    world
-        .this_process()
-        .gather_varcount_into_root(&local_distances[..], &mut global_distances[..]);
+    // Create displacements for various buffer sizes
+    let mut displacements = vec![0; world.size() as usize];
+    for i in 1..world.size() as usize {
+        displacements[i] = displacements[i-1] + all_counts[i-1];
+    }
 
+    // Gather data from all processes to root
+    // Fixed approach using gatherv
+    if is_root(rank) {
+        for i in 0..world.size() {
+            if i == rank {
+                // Root process's own data - copy directly
+                for j in 0..local_count {
+                    global_indices[displacements[i as usize] + j] = local_indices[j];
+                    global_distances[displacements[i as usize] + j] = local_distances[j];
+                }
+            } else {
+                // Receive data from other processes
+                let source = world.process_at_rank(i);
+                let count = all_counts[i as usize];
+                
+                if count > 0 {
+                    let idx_start = displacements[i as usize];
+                    
+                    // Receive indices
+                    let indices = source.receive_vec::<usize>().0;
+                    for (j, &idx) in indices.iter().enumerate() {
+                        if j < count {
+                            global_indices[idx_start + j] = idx;
+                        }
+                    }
+                    
+                    // Receive distances
+                    let distances = source.receive_vec::<f32>().0;
+                    for (j, &dist) in distances.iter().enumerate() {
+                        if j < count {
+                            global_distances[idx_start + j] = dist;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Non-root processes send their data
+        let root = world.process_at_rank(ROOT);
+        root.send(&local_indices[..]);
+        root.send(&local_distances[..]);
+    }
+
+    // Ensure all communications are complete
+    world.barrier();
+    
     (global_indices, global_distances)
 }
 

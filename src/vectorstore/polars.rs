@@ -61,9 +61,7 @@ fn read_parquet(file_path: &str) -> DataFrame {
 
     let df = match std::fs::File::open(path) {
         Ok(mut f) => ParquetReader::new(&mut f).finish().unwrap(),
-        Err(e) => {
-            // println!("Fail to load dataframe: {:?}", e);
-
+        Err(_) => {
             // Create an empty dataframe with proper structure
             let mut empty_df = get_empty_dataframe();
             let mut file = File::create(path).expect("Failed to create file");
@@ -237,8 +235,7 @@ impl PolarsVectorstore {
             ));
         }
 
-        let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        // println!("File written successfully, size: {} bytes", file_size);
+        fs::metadata(path).map(|m| m.len()).unwrap_or(0);
 
         Ok(())
     }

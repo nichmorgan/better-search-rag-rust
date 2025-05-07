@@ -1,12 +1,10 @@
 use crate::{
-    llm::LlmService,
     source,
     vectorstore::polars::{PolarsVectorstore, SliceArgs},
 };
-use std::{ops::Mul, path::Path};
+use std::ops::Mul;
 
 use mpi::traits::*;
-use polars::error::PolarsError;
 
 use super::is_root;
 

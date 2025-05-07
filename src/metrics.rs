@@ -35,7 +35,7 @@ pub fn mean_reciprocal_rank(
         let mut rank = 0;
 
         for (i, result) in query_results.iter().enumerate() {
-            let result_idx = match ids_map {
+            let _result_idx = match ids_map {
                 Some(map) => map.get(&i).copied().unwrap_or(i),
                 None => i,
             };
@@ -77,7 +77,7 @@ pub fn recall_at_k(
         let mut found_in_top_k = false;
 
         for i in 0..actual_k {
-            let result_idx = match ids_map {
+            let _result_idx = match ids_map {
                 Some(map) => map.get(&i).copied().unwrap_or(i),
                 None => i,
             };

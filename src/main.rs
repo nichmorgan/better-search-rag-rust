@@ -5,10 +5,10 @@ mod source;
 mod utils;
 mod vectorstore;
 
-use std::{env, fs, path::Path, time::Instant};
+use std::{env, fs, path::Path};
 
 use llm::LlmService;
-use mpi::{collective::SystemOperation, traits::*};
+use mpi::traits::*;
 
 use mpi_helpers::{
     metrics::{calculate_accuracy_metrics, parallel_top_k_similarity_search, print_top_k_results},
@@ -27,7 +27,6 @@ async fn main() {
     let world = universe.world();
     let rank = world.rank();
     let size = world.size();
-    let root_process = world.process_at_rank(ROOT);
 
     println!("Process {} of {} initialized", rank, size);
 
@@ -50,7 +49,7 @@ async fn main() {
     let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
 
     if !skip_process {
-        let processed_count = process_files_embeddings_chunked(
+        process_files_embeddings_chunked(
             dir,
             &extensions,
             &world,

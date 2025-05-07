@@ -1,14 +1,9 @@
 use crate::{
-    llm::LlmService,
-    metrics::cosine_distance,
     mpi_helpers::{is_root, load_balance::slice_by_rank},
     source,
-    vectorstore::polars::{PolarsVectorstore, SliceArgs},
 };
-use std::{ops::Mul, path::Path};
 
 use mpi::traits::*;
-use polars::error::PolarsError;
 
 pub fn read_files<C: Communicator>(
     dir: &str,
