@@ -67,12 +67,11 @@ impl LlmService for HfService {
     
         // Configure padding more explicitly
         let mut padding_params = PaddingParams::default();
-        padding_params.strategy = tokenizers::PaddingStrategy::Fixed;
+        padding_params.strategy = tokenizers::PaddingStrategy::Fixed(max_token_length);
         padding_params.direction = tokenizers::PaddingDirection::Right;
         padding_params.pad_id = 0;
         padding_params.pad_token = "[PAD]".to_string();
         padding_params.pad_type_id = 0;
-        padding_params.max_length = Some(max_token_length);
     
         tokenizer
             .with_truncation(Some(truncation_params))
