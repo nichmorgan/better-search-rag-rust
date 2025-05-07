@@ -5,7 +5,7 @@ mod source;
 mod utils;
 mod vectorstore;
 
-use std::{fs, path::Path, time::Instant};
+use std::{env, fs, path::Path, time::Instant};
 
 use llm::LlmService;
 use mpi::{collective::SystemOperation, traits::*};
@@ -30,42 +30,47 @@ async fn main() {
     let dir = ".repos/jabref";
     let chunk_size = 32;
     let vstore_dir = Path::new(".volumes/vstore");
+    let skip_process: bool = env::var("SKIP_PROCESS").unwrap_or_default().parse().unwrap_or(false);
 
     // Create base directories if they don't exist
     if is_root(rank) {
         fs::create_dir_all(".volumes").unwrap_or_default();
     }
-
+    
     let llm_service =
         llm::hf::HfService::default().expect(&generate_msg(rank, "Fail to load llm service"));
     let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
-    let processed_count = process_files_embeddings_chunked(
-        dir,
-        &extensions,
-        &world,
-        rank,
-        size,
-        &llm_service,
-        &mut local_vstore,
-        chunk_size,
-    ).unwrap_or_else(|e| {
-        println!("[Rank {}] Processing error: {}", rank, e);
-        0
-    });
 
-    // Wait for all processes to finish writing their files
-    world.barrier();
-
-    // Step 5: Process 0 merges all storage files
-    if is_root(rank) {
-        merge_vector_stores(size, vstore_dir)
-            .expect(&generate_msg(rank, "Fail to merging vector stores"))
-            .persist()
-            .expect(&generate_msg(rank, "Fail to persist global vstore"));
+    if !skip_process {
+        let processed_count = process_files_embeddings_chunked(
+            dir,
+            &extensions,
+            &world,
+            rank,
+            size,
+            &llm_service,
+            &mut local_vstore,
+            chunk_size,
+        ).unwrap_or_else(|e| {
+            println!("[Rank {}] Processing error: {}", rank, e);
+            0
+        });
+        // Wait for all processes to finish writing their files
+        world.barrier();
+    
+    
+        // Step 5: Process 0 merges all storage files
+        if is_root(rank) {
+            merge_vector_stores(size, vstore_dir)
+                .expect(&generate_msg(rank, "Fail to merging vector stores"))
+                .persist()
+                .expect(&generate_msg(rank, "Fail to persist global vstore"));
+        }
     }
 
     // Step 6: Metrics
     let top_k = 50;
+    println!("[Rank {}] Calculating top-{} distances", rank, top_k);
     let (local_distance_indexes, local_distances): (Vec<_>, Vec<_>) =
         similarity_search(vstore_dir, rank, size, top_k)
             .expect(&generate_msg(rank, "Fail to calculate similarity search"))

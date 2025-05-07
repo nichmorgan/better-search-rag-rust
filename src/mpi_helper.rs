@@ -1,10 +1,8 @@
 use crate::{
-    source,
-    vectorstore::
-        polars::{PolarsVectorstore, SliceArgs}
-    ,
-    metrics::cosine_distance,
     llm::LlmService,
+    metrics::cosine_distance,
+    source,
+    vectorstore::polars::{PolarsVectorstore, SliceArgs},
 };
 use std::{ops::Mul, path::Path};
 
@@ -95,7 +93,7 @@ pub fn read_files_chunked<C: Communicator>(
     world: &C,
     rank: i32,
     size: i32,
-    chunk_size: usize  // Number of files to process in one chunk
+    chunk_size: usize, // Number of files to process in one chunk
 ) -> Vec<String> {
     let files = source::find_files_by_extensions(dir, &extensions);
     let mut rank_contents = Vec::new();
@@ -117,32 +115,40 @@ pub fn read_files_chunked<C: Communicator>(
     let slice_data = slice_by_rank(rank, size, &files);
     let total_files = slice_data.slice.len();
     let total_chunks = (total_files + chunk_size - 1) / chunk_size;
-    
+
     println!(
         "[Rank {}] Processing {} files in {} chunks (chunk size: {})",
         rank, total_files, total_chunks, chunk_size
     );
-    
+
     // Process files in chunks
     for chunk_index in 0..total_chunks {
         let chunk_start = chunk_index * chunk_size;
         let chunk_end = std::cmp::min(chunk_start + chunk_size, total_files);
         let chunk = &slice_data.slice[chunk_start..chunk_end];
-        
+
         println!(
             "[Rank {}] Processing chunk {}/{} ({} files)",
-            rank, chunk_index + 1, total_chunks, chunk.len()
+            rank,
+            chunk_index + 1,
+            total_chunks,
+            chunk.len()
         );
-        
+
         // Process this chunk
-        let chunk_contents: Vec<String> = chunk.iter()
+        let chunk_contents: Vec<String> = chunk
+            .iter()
             .filter_map(|path| source::read_file(path))
             .collect();
-            
+
         rank_contents.extend(chunk_contents);
     }
 
-    println!("[Rank {}] Completed processing {} files", rank, rank_contents.len());
+    println!(
+        "[Rank {}] Completed processing {} files",
+        rank,
+        rank_contents.len()
+    );
     rank_contents
 }
 
@@ -159,11 +165,7 @@ pub fn get_local_vstore(vstore_dir: &Path, rank: i32, empty: bool) -> PolarsVect
 // In src/mpi_helper.rs
 pub fn get_global_vstore(dir: &Path, empty: bool) -> PolarsVectorstore {
     // Create a consistent file path by always using "global.parquet"
-    let file_path = dir
-        .join("global.parquet")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let file_path = dir.join("global.parquet").to_str().unwrap().to_string();
     PolarsVectorstore::new(&file_path, empty)
 }
 
@@ -203,7 +205,7 @@ where
     E: std::fmt::Debug,
 {
     let files = source::find_files_by_extensions(dir, &extensions);
-    
+
     if is_root(rank) {
         println!(
             "Found {} files filtered by extensions: {:?}",
@@ -221,42 +223,51 @@ where
     let slice_data = slice_by_rank(rank, size, &files);
     let total_files = slice_data.slice.len();
     let total_chunks = (total_files + chunk_size - 1) / chunk_size;
-    
+
     println!(
         "[Rank {}] Processing {} files in {} chunks (chunk size: {})",
         rank, total_files, total_chunks, chunk_size
     );
-    
+
     let mut total_processed = 0;
-    
+
     // Process files in chunks
     for chunk_index in 0..total_chunks {
         let chunk_start = chunk_index * chunk_size;
         let chunk_end = std::cmp::min(chunk_start + chunk_size, total_files);
         let chunk_files = &slice_data.slice[chunk_start..chunk_end];
-        
+
         println!(
             "[Rank {}] Processing chunk {}/{} ({} files)",
-            rank, chunk_index + 1, total_chunks, chunk_files.len()
+            rank,
+            chunk_index + 1,
+            total_chunks,
+            chunk_files.len()
         );
-        
+
         // Read files in this chunk
         let read_start = std::time::Instant::now();
         let chunk_contents: Vec<String> = chunk_files
             .iter()
             .filter_map(|path| source::read_file(path))
             .collect();
-            
+
         println!(
             "[Rank {}] Read {} files in {:?}",
-            rank, chunk_contents.len(), read_start.elapsed()
+            rank,
+            chunk_contents.len(),
+            read_start.elapsed()
         );
-        
+
         if chunk_contents.is_empty() {
-            println!("[Rank {}] No valid content in chunk {}, skipping", rank, chunk_index + 1);
+            println!(
+                "[Rank {}] No valid content in chunk {}, skipping",
+                rank,
+                chunk_index + 1
+            );
             continue;
         }
-        
+
         // Generate embeddings for this chunk
         let embed_start = std::time::Instant::now();
         let chunk_embeddings = match llm_service.get_embeddings(&chunk_contents) {
@@ -266,49 +277,59 @@ where
                 continue;
             }
         };
-        
+
         println!(
             "[Rank {}] Generated {} embeddings in {:?}",
-            rank, chunk_embeddings.len(), embed_start.elapsed()
+            rank,
+            chunk_embeddings.len(),
+            embed_start.elapsed()
         );
-        
+
         // Store embeddings for this chunk
         let store_start = std::time::Instant::now();
         match process_store_vectors(vstore, &chunk_embeddings, rank) {
             Ok(count) => {
                 println!(
                     "[Rank {}] Stored {} embeddings in {:?}",
-                    rank, count, store_start.elapsed()
+                    rank,
+                    count,
+                    store_start.elapsed()
                 );
                 total_processed += count;
-            },
+            }
             Err(e) => {
                 println!("[Rank {}] Error storing embeddings: {}", rank, e);
             }
         }
-        
-        // Persist after each chunk to avoid memory buildup
-        let persist_start = std::time::Instant::now();
-        if let Err(e) = vstore.persist() {
-            println!("[Rank {}] Error persisting embeddings: {:?}", rank, e);
-        } else {
-            println!(
-                "[Rank {}] Persisted embeddings in {:?}",
-                rank, persist_start.elapsed()
-            );
-        }
-        
+
         // Explicitly release memory
         drop(chunk_contents);
         drop(chunk_embeddings);
-        
+
         println!(
             "[Rank {}] Completed chunk {}/{} - Total processed: {}",
-            rank, chunk_index + 1, total_chunks, total_processed
+            rank,
+            chunk_index + 1,
+            total_chunks,
+            total_processed
         );
     }
-    
-    println!("[Rank {}] Completed all chunks. Total embeddings: {}", rank, total_processed);
+
+    let persist_start = std::time::Instant::now();
+    if let Err(e) = vstore.persist() {
+        println!("[Rank {}] Error persisting embeddings: {:?}", rank, e);
+    } else {
+        println!(
+            "[Rank {}] Persisted embeddings in {:?}",
+            rank,
+            persist_start.elapsed()
+        );
+    }
+
+    println!(
+        "[Rank {}] Completed all chunks. Total embeddings: {}",
+        rank, total_processed
+    );
     Ok(total_processed)
 }
 
@@ -333,7 +354,10 @@ pub fn merge_vector_stores(size: i32, vstore_dir: &Path) -> Result<PolarsVectors
                         println!("Merged {} vectors from rank {}", vectors.len(), r);
                         total_vectors += vectors.len();
                     }
-                    Err(e) => println!("[Rank {}] Error appending vectors {:?}: {:?}", r, vectors, e),
+                    Err(e) => println!(
+                        "[Rank {}] Error appending vectors {:?}: {:?}",
+                        r, vectors, e
+                    ),
                 }
             }
             Err(e) => {
@@ -355,21 +379,19 @@ pub fn similarity_search(
 ) -> Result<Vec<(usize, f32)>, PolarsError> {
     let vstore = get_global_vstore(vstore_dir, false);
     let vstore_count = vstore.get_count()?;
-    let target_vector = vstore
-        .get(0)?;
+    let target_vector = vstore.get(0)?;
     let rank_interval = interval_by_rank(rank, size, vstore_count);
-    let rank_vectors = vstore
-        .get_many(Some(SliceArgs {
-            offset: rank_interval.start_index as i32,
-            length: rank_interval.get_count(),
-        }))?;
+    let rank_vectors = vstore.get_many(Some(SliceArgs {
+        offset: rank_interval.start_index as i32,
+        length: rank_interval.get_count(),
+    }))?;
     let mut distances: Vec<(usize, f32)> = rank_vectors
         .iter()
         .enumerate()
         .map(|(i, v)| (i, cosine_distance(v, &target_vector)))
         .collect();
     distances.sort_by(|(_, a), (_, b)| b.partial_cmp(&a).unwrap());
-    
+
     Ok(distances.iter().take(top_k).cloned().collect())
 }
 
