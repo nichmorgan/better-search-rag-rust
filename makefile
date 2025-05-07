@@ -1,4 +1,5 @@
-N = 6
+N ?= 6
+SKIP_PROCESS ?= 0
 OUT_FILE = ./target/release/better-search-rag-rust
 
 run-ollama:
@@ -10,10 +11,10 @@ setup:
 	$(MAKE) run-ollama
 
 run:
-	mpiexec -n $N target/release/better-search-rag-rust 
+	SKIP_PROCESS=$(SKIP_PROCESS) mpiexec -n $(N) target/release/better-search-rag-rust 
 
 run-slurm:
-	srun --mem 300GB --ntasks $N --cores 32 && \
+	SKIP_PROCESS=$(SKIP_PROCESS) srun --mem 300GB --ntasks $(N) --cores 32 && \
 	module load openmpi llvm ollama && \
 	$(MAKE) setup && \
 	${OUT_FILE}
