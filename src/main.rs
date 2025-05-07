@@ -46,7 +46,7 @@ async fn main() {
 
     let llm_service =
         llm::hf::HfService::default().expect(&generate_msg(rank, "Fail to load llm service"));
-    let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
+    let mut local_vstore = get_local_vstore(vstore_dir, rank, !skip_process);
 
     if !skip_process {
         process_files_embeddings_chunked(
