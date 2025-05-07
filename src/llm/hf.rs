@@ -47,68 +47,80 @@ impl LlmService for HfService {
     //     }
     // }
 
-    fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>> {
+    fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>, Error> {
         if texts.is_empty() {
             return Ok(vec![]);
         }
         if texts.iter().any(|v| v.is_empty()) {
             return Err(Error::new("Invalid inputs: has empty values"));
         }
-
+    
         // Create a mutable clone of the tokenizer
         let mut tokenizer = self.tokenizer.clone();
-
+    
         // Set a reasonable maximum token length
         let max_token_length = 512;
-
+    
         // Configure truncation
         let mut truncation_params = TruncationParams::default();
         truncation_params.max_length = max_token_length;
-
-        let padding_params = PaddingParams::default();
-
+    
+        // Configure padding more explicitly
+        let mut padding_params = PaddingParams::default();
+        padding_params.strategy = tokenizers::PaddingStrategy::Fixed;
+        padding_params.direction = tokenizers::PaddingDirection::Right;
+        padding_params.pad_id = 0;
+        padding_params.pad_token = "[PAD]".to_string();
+        padding_params.pad_type_id = 0;
+        padding_params.max_length = Some(max_token_length);
+    
         tokenizer
             .with_truncation(Some(truncation_params))
             .map_err(|e| Error::new(format!("Tokenization config error: {}", e)))?
             .with_padding(Some(padding_params));
-
+    
         // Encode with truncation and padding
         let encodings = tokenizer
             .encode_batch(texts.clone(), false)
             .map_err(|e| Error::new(format!("Tokenization error: {}", e)))?;
-
-        // Extract IDs and attention mask
-        let ids: Vec<i64> = encodings
-            .iter()
-            .flat_map(|e| e.get_ids().iter().map(|i| *i as i64))
-            .collect();
-
-        let mask: Vec<i64> = encodings
-            .iter()
-            .flat_map(|e| e.get_attention_mask().iter().map(|i| *i as i64))
-            .collect();
-
-        // Create tensors
+    
+        // Pre-allocate arrays of the correct size
+        let mut ids = vec![0i64; texts.len() * max_token_length];
+        let mut mask = vec![0i64; texts.len() * max_token_length];
+    
+        // Fill the arrays directly from encodings
+        for (i, encoding) in encodings.iter().enumerate() {
+            let encoding_ids = encoding.get_ids();
+            let encoding_mask = encoding.get_attention_mask();
+            let len = encoding_ids.len().min(max_token_length);
+            
+            for j in 0..len {
+                ids[i * max_token_length + j] = encoding_ids[j] as i64;
+                mask[i * max_token_length + j] = encoding_mask[j] as i64;
+            }
+        }
+    
+        // Create tensors with the fixed dimensions
         let a_ids = Array2::from_shape_vec([texts.len(), max_token_length], ids)
             .map_err(|e| Error::new(format!("array2 from_shape_vec for ids error: {}", e)))?;
         let a_mask = Array2::from_shape_vec([texts.len(), max_token_length], mask)
             .map_err(|e| Error::new(format!("array2 from_shape_vec for mask error: {}", e)))?;
-
+    
         // Run model
         let outputs = self.model.run(ort::inputs![a_ids, a_mask]?)?;
-
+    
         // Extract embeddings
         let embeddings = outputs[1]
             .try_extract_tensor::<f32>()?
             .into_dimensionality::<Ix2>()
             .map_err(|e| Error::new(format!("into_dimensionality error: {}", e)))?;
-
+    
         // Convert to vector format
         let result: Vec<Vec<f32>> = embeddings
             .axis_iter(Axis(0))
             .map(|row| row.to_vec())
             .collect();
-
+    
         Ok(result)
     }
 }
