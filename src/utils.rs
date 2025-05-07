@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod tests {
     use rand::Rng;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     use crate::vectorstore::polars::PolarsVectorstore;
 

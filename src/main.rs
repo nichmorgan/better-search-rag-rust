@@ -1,6 +1,6 @@
 mod llm;
 mod metrics;
-mod mpi_helper;
+mod mpi_helpers;
 mod source;
 mod utils;
 mod vectorstore;
@@ -10,7 +10,12 @@ use std::{env, fs, path::Path, time::Instant};
 use llm::LlmService;
 use mpi::{collective::SystemOperation, traits::*};
 
-use mpi_helper::*;
+use mpi_helpers::{
+    metrics::{calculate_accuracy_metrics, parallel_top_k_similarity_search, print_top_k_results},
+    tasks::{merge_vector_stores, process_files_embeddings_chunked},
+    vectorstore::get_local_vstore,
+    *,
+};
 
 fn generate_msg(rank: i32, message: &str) -> String {
     format!("[Rank {}] {}", rank, message)
@@ -30,13 +35,16 @@ async fn main() {
     let dir = ".repos/jabref";
     let chunk_size = 32;
     let vstore_dir = Path::new(".volumes/vstore");
-    let skip_process: bool = env::var("SKIP_PROCESS").unwrap_or_default().parse().unwrap_or(false);
+    let skip_process: bool = env::var("SKIP_PROCESS")
+        .unwrap_or_default()
+        .parse()
+        .unwrap_or(false);
 
     // Create base directories if they don't exist
     if is_root(rank) {
         fs::create_dir_all(".volumes").unwrap_or_default();
     }
-    
+
     let llm_service =
         llm::hf::HfService::default().expect(&generate_msg(rank, "Fail to load llm service"));
     let mut local_vstore = get_local_vstore(vstore_dir, rank, true);
@@ -51,14 +59,14 @@ async fn main() {
             &llm_service,
             &mut local_vstore,
             chunk_size,
-        ).unwrap_or_else(|e| {
+        )
+        .unwrap_or_else(|e| {
             println!("[Rank {}] Processing error: {}", rank, e);
             0
         });
         // Wait for all processes to finish writing their files
         world.barrier();
-    
-    
+
         // Step 5: Process 0 merges all storage files
         if is_root(rank) {
             merge_vector_stores(size, vstore_dir)
@@ -68,54 +76,43 @@ async fn main() {
         }
     }
 
-    // Step 6: Metrics
+    // Step 6: Metrics calculation - Top-k similarity search
     let top_k = 50;
-    println!("[Rank {}] Calculating top-{} distances", rank, top_k);
-    let (local_distance_indexes, local_distances): (Vec<_>, Vec<_>) =
-        similarity_search(vstore_dir, rank, size, top_k)
-            .expect(&generate_msg(rank, "Fail to calculate similarity search"))
-            .iter()
-            .cloned()
-            .unzip();
-    println!("[Rank {}] distances: {:?}", rank, local_distances);
+    let query_idx = 0; // Using the first vector as the query
 
-    let mut total_distances: usize = 0;
-    world.all_reduce_into(
-        &local_distances.len(),
-        &mut total_distances,
-        SystemOperation::sum(),
-    );
+    // Perform parallel top-k similarity search
+    let global_top_k = parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k);
 
-    let mut global_distance_indexes = vec![0usize; total_distances];
-    let mut global_distances = vec![0f32; total_distances];
-    world.all_gather_into(&local_distance_indexes, &mut global_distance_indexes[..]);
-    world.all_gather_into(&local_distances, &mut global_distances[..]);
-
+    // Root process handles the results and metrics calculation
     if is_root(rank) {
-        let mut global_distances: Vec<(&usize, &f32)> = global_distance_indexes
-            .iter()
-            .zip(global_distances.iter())
-            .collect();
-        global_distances.sort_by(|(_, a), (_, b)| b.partial_cmp(&a).unwrap());
+        if let Some(top_k_results) = global_top_k {
+            // Print results
+            print_top_k_results(&top_k_results);
 
-        let mut global_index_topk: Vec<&usize> = vec![];
-        let mut global_topk: Vec<(&usize, &f32)> = vec![];
-        for (idx, dist) in global_distances.iter().cloned() {
-            if global_index_topk.len() == top_k {
-                break;
-            }
-            if global_index_topk.contains(&idx) {
-                continue;
-            }
-            global_index_topk.push(idx);
-            global_topk.push((idx, dist));
+            // Calculate accuracy metrics
+            let (mrr, recall, overlap) =
+                calculate_accuracy_metrics(&top_k_results, query_idx, top_k);
+
+            println!("Accuracy Metrics:");
+            println!("  Mean Reciprocal Rank (MRR): {:.4}", mrr);
+            println!("  Recall@{}: {:.4}", top_k, recall);
+            println!("  Top-k Overlap: {:.4}", overlap);
+
+            // Additional measurements could be added here:
+            // - Execution time comparisons
+            // - Speedup calculations
+            // - Efficiency metrics
+        } else {
+            println!("Error: Failed to compute global top-k results");
         }
-
-        println!("global_topk: {:?}", global_topk);
     }
 
     // After all MPI operations are done
     world.barrier();
+    if is_root(rank) {
+        println!("MPI operations completed successfully");
+    }
+
     if is_root(rank) {
         println!("MPI operations completed successfully");
     }

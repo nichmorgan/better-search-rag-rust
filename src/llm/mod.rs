@@ -10,5 +10,4 @@ pub trait LlmService {
         Self: Sized;
 
     fn get_embeddings(&self, texts: &Vec<String>) -> Result<Vec<Vec<f32>>, Error>;
-    
 }

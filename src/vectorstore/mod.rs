@@ -28,4 +28,3 @@ pub trait VectorStorage {
 
     fn get_count(&self) -> Result<usize, Self::Error>;
 }
-

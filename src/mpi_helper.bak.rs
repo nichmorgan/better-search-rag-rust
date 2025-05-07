@@ -380,19 +380,34 @@ pub fn similarity_search(
     let vstore = get_global_vstore(vstore_dir, false);
     let vstore_count = vstore.get_count()?;
     let target_vector = vstore.get(0)?;
+    
+    // Determine the portion of vectors this rank should process
     let rank_interval = interval_by_rank(rank, size, vstore_count);
+    
+    // Retrieve vectors for this rank
     let rank_vectors = vstore.get_many(Some(SliceArgs {
         offset: rank_interval.start_index as i32,
         length: rank_interval.get_count(),
     }))?;
+    
+    // Calculate distances between target vector and each vector in this rank's portion
     let mut distances: Vec<(usize, f32)> = rank_vectors
         .iter()
         .enumerate()
-        .map(|(i, v)| (i, cosine_distance(v, &target_vector)))
+        .map(|(i, v)| {
+            // Convert local index to global index
+            let global_idx = rank_interval.start_index + i;
+            (global_idx, cosine_distance(v, &target_vector))
+        })
         .collect();
-    distances.sort_by(|(_, a), (_, b)| b.partial_cmp(&a).unwrap());
-
-    Ok(distances.iter().take(top_k).cloned().collect())
+    
+    // Sort by distance (smallest first) and keep only top_k
+    distances.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+    if distances.len() > top_k {
+        distances.truncate(top_k);
+    }
+    
+    Ok(distances)
 }
 
 pub fn mpi_finish(rank: i32) {
