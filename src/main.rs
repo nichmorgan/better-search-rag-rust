@@ -170,11 +170,12 @@ async fn main() {
 
     // After all MPI operations are done, generate and print benchmark report
     world.barrier();
-
+    println!("[Rank {}] Starting benchmark report generation", rank);
     let report = benchmark_manager.generate_report(&world, None);
+    println!("[Rank {}] Completed benchmark report generation", rank);
+    world.barrier();
     if is_root(rank) {
         // Generate and print the benchmark report
-        println!("[Rank {}] Generating benchmark report", rank);
         println!("[Rank {}] Benchmark report:", rank);
         println!("----------------------------------------");
         println!("\n\n");
@@ -183,7 +184,6 @@ async fn main() {
         println!("----------------------------------------");
         println!("[Rank {}] Benchmark report generated", rank);
     }
-
     world.barrier();
     println!("[Rank {}] Process completed, terminating", rank);
 }
