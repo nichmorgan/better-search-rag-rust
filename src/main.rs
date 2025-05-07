@@ -84,7 +84,7 @@ async fn main() {
     let mut target_vector = vec![0.0; 768]; // Placeholder for the target vector
     if is_root(rank) {
         println!("[Rank {}] Generating target vector", rank);
-        target_vector = llm_service.get_embeddings(vec!["Hello, world!".to_string()].as_ref()).unwrap()[0].clone();
+        target_vector = local_vstore.get(0).unwrap();
     }
     println!("[Rank {}] Broadcasting target vector", rank);
     world.process_at_rank(ROOT).broadcast_into(&mut target_vector);
