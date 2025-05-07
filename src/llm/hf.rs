@@ -1,11 +1,11 @@
 use ndarray::{Array2, Axis, Ix2};
 use ort::{Error, Result, execution_providers::CUDAExecutionProvider, session::Session};
 use std::path::Path;
-use tokenizers::Tokenizer;
+use tokenizers::{PaddingParams, Tokenizer, TruncationParams};
 
 use super::LlmService;
 
-fn build_model_and_tokenizer() -> Result<(Session, Tokenizer), ort::Error> {
+fn build_model_and_tokenizer() -> Result<(Session, Tokenizer)> {
     let models_dir =
         Path::new(env!("CARGO_MANIFEST_DIR")).join(".volumes/models/nomic_embed_text_onnx");
 
@@ -35,6 +35,7 @@ impl LlmService for HfService {
             .commit()?;
 
         let (model, tokenizer) = build_model_and_tokenizer()?;
+
         Ok(Self { model, tokenizer })
     }
 
@@ -54,54 +55,55 @@ impl LlmService for HfService {
             return Err(Error::new("Invalid inputs: has empty values"));
         }
 
-        // Encode our input strings. `encode_batch` will pad each input to be the same length.
-        let encodings = self
-            .tokenizer
+        // Create a mutable clone of the tokenizer
+        let mut tokenizer = self.tokenizer.clone();
+
+        // Set a reasonable maximum token length
+        let max_token_length = 512;
+
+        // Configure truncation
+        let mut truncation_params = TruncationParams::default();
+        truncation_params.max_length = max_token_length;
+
+        let padding_params = PaddingParams::default();
+
+        tokenizer
+            .with_truncation(Some(truncation_params))
+            .map_err(|e| Error::new(format!("Tokenization config error: {}", e)))?
+            .with_padding(Some(padding_params));
+
+        // Encode with truncation and padding
+        let encodings = tokenizer
             .encode_batch(texts.clone(), false)
-            .map_err(|e| Error::new(e.to_string()))?;
-        // Get the padded length of each encoding.
-        let padded_token_length = encodings[0].len();
+            .map_err(|e| Error::new(format!("Tokenization error: {}", e)))?;
 
-        let has_same_shape = encodings.iter().all(|v| v.len() == padded_token_length);
-        if !has_same_shape {
-            let mut shape_example: Vec<&str> = Vec::new();
-            let mut shapes: Vec<usize> = Vec::new();
-            encodings.iter().enumerate().for_each(|(i, v)| {
-                let v_len = v.len();
-                if !shapes.contains(&v_len) {
-                    shapes.push(v_len);
-                    shape_example.push(&texts[i]);
-                }
-            });
-            println!(
-                "Shape inconsistent: {:?}",
-                shapes
-            );
-        }
-
-        // Get our token IDs & mask as a flattened array.
+        // Extract IDs and attention mask
         let ids: Vec<i64> = encodings
             .iter()
             .flat_map(|e| e.get_ids().iter().map(|i| *i as i64))
             .collect();
+
         let mask: Vec<i64> = encodings
             .iter()
             .flat_map(|e| e.get_attention_mask().iter().map(|i| *i as i64))
             .collect();
 
-        // Convert our flattened arrays into 2-dimensional tensors of shape [N, L].
-        // TODO: make exception log better
-        let a_ids = Array2::from_shape_vec([texts.len(), padded_token_length], ids).unwrap();
-        let a_mask = Array2::from_shape_vec([texts.len(), padded_token_length], mask).unwrap();
+        // Create tensors
+        let a_ids = Array2::from_shape_vec([texts.len(), max_token_length], ids)
+            .map_err(|e| Error::new(format!("array2 from_shape_vec for ids error: {}", e)))?;
+        let a_mask = Array2::from_shape_vec([texts.len(), max_token_length], mask)
+            .map_err(|e| Error::new(format!("array2 from_shape_vec for mask error: {}", e)))?;
 
-        // Run the model.
+        // Run model
         let outputs = self.model.run(ort::inputs![a_ids, a_mask]?)?;
 
-        // Extract our embeddings tensor and convert it to a strongly-typed 2-dimensional array.
+        // Extract embeddings
         let embeddings = outputs[1]
             .try_extract_tensor::<f32>()?
             .into_dimensionality::<Ix2>()
-            .unwrap();
+            .map_err(|e| Error::new(format!("into_dimensionality error: {}", e)))?;
+
+        // Convert to vector format
         let result: Vec<Vec<f32>> = embeddings
             .axis_iter(Axis(0))
             .map(|row| row.to_vec())
