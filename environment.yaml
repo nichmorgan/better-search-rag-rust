@@ -1,5 +1,5 @@
 name: onnx-exporter
-packages:
+channels:
   - conda-forge
   - defaults
 dependencies:
