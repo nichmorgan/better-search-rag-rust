@@ -3,7 +3,9 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - python=3.12
   - pip
   - pip:
+    - sentence-transformers
     - optimum[exporters]
     - einops
