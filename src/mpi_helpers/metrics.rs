@@ -5,10 +5,10 @@ use mpi::traits::*;
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::mpi_helpers::{is_root, ROOT};
+use crate::metrics::cosine_distance;
 use crate::mpi_helpers::load_balance::interval_by_rank;
 use crate::mpi_helpers::vectorstore::get_global_vstore;
-use crate::metrics::cosine_distance;
+use crate::mpi_helpers::{ROOT, is_root};
 use crate::vectorstore::polars::SliceArgs;
 use polars::error::PolarsError;
 
@@ -85,7 +85,7 @@ pub fn gather_top_k_results<C: Communicator>(
     // Create displacements for various buffer sizes
     let mut displacements = vec![0; world.size() as usize];
     for i in 1..world.size() as usize {
-        displacements[i] = displacements[i-1] + all_counts[i-1];
+        displacements[i] = displacements[i - 1] + all_counts[i - 1];
     }
 
     // Gather data from all processes to root
@@ -102,10 +102,10 @@ pub fn gather_top_k_results<C: Communicator>(
                 // Receive data from other processes
                 let source = world.process_at_rank(i);
                 let count = all_counts[i as usize];
-                
+
                 if count > 0 {
                     let idx_start = displacements[i as usize];
-                    
+
                     // Receive indices
                     let indices = source.receive_vec::<usize>().0;
                     for (j, &idx) in indices.iter().enumerate() {
@@ -113,7 +113,7 @@ pub fn gather_top_k_results<C: Communicator>(
                             global_indices[idx_start + j] = idx;
                         }
                     }
-                    
+
                     // Receive distances
                     let distances = source.receive_vec::<f32>().0;
                     for (j, &dist) in distances.iter().enumerate() {
@@ -133,7 +133,7 @@ pub fn gather_top_k_results<C: Communicator>(
 
     // Ensure all communications are complete
     world.barrier();
-    
+
     (global_indices, global_distances)
 }
 
@@ -177,7 +177,7 @@ pub fn parallel_top_k_similarity_search<C: Communicator>(
     size: i32,
     vstore_dir: &Path,
     top_k: usize,
-    target_vector: &Vec<f32>
+    target_vector: &Vec<f32>,
 ) -> Option<Vec<(usize, f32)>> {
     println!("[Rank {}] Calculating top-{} distances", rank, top_k);
 

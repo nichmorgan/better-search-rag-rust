@@ -30,7 +30,7 @@ async fn main() {
     let size = world.size();
 
     println!("Process {} of {} initialized", rank, size);
-    
+
     // Initialize benchmark manager
     let mut benchmark_manager = BenchmarkManager::new(rank);
     let overall_timer = BenchmarkTimer::start("total_execution");
@@ -53,13 +53,13 @@ async fn main() {
     let llm_service = time_operation(&mut benchmark_manager, "llm_service_loading", None, || {
         llm::hf::HfService::default().expect(&generate_msg(rank, "Fail to load llm service"))
     });
-    
+
     let mut local_vstore = get_local_vstore(vstore_dir, rank, !skip_process);
 
     // Time the embedding generation and processing
     if !skip_process {
         let embedding_timer = BenchmarkTimer::start("embedding_generation");
-        
+
         process_files_embeddings_chunked(
             dir,
             &extensions,
@@ -74,33 +74,33 @@ async fn main() {
             println!("[Rank {}] Processing error: {}", rank, e);
             0
         });
-        
+
         // Record embedding generation timing with item count
-        benchmark_manager.record(
-            embedding_timer.stop().clone()
-        );
-        
+        benchmark_manager.record(embedding_timer.stop().clone());
+
         // Wait for all processes to finish writing their files
         world.barrier();
 
         // Step 5: Process 0 merges all storage files
         if is_root(rank) {
             let merge_timer = BenchmarkTimer::start("vector_store_merge");
-            
+
             let mut merged_store = merge_vector_stores(size, vstore_dir)
                 .expect(&generate_msg(rank, "Fail to merging vector stores"));
-                
+
             let vector_count = merged_store.get_count().unwrap_or(0);
-            
-            merged_store.persist()
+
+            merged_store
+                .persist()
                 .expect(&generate_msg(rank, "Fail to persist global vstore"));
-                
+
             benchmark_manager.record(
                 BenchmarkTimer {
                     name: merge_timer.name,
                     start: merge_timer.start,
                     items: Some(vector_count),
-                }.stop()
+                }
+                .stop(),
             );
         }
     }
@@ -112,7 +112,7 @@ async fn main() {
 
     // Time the similarity search
     let search_timer = BenchmarkTimer::start("similarity_search");
-    
+
     // Perform parallel top-k similarity search
     let mut target_vector = vec![0.0; 768]; // Placeholder for the target vector
     if is_root(rank) {
@@ -120,19 +120,24 @@ async fn main() {
         target_vector = local_vstore.get(0).unwrap();
     }
     println!("[Rank {}] Broadcasting target vector", rank);
-    world.process_at_rank(ROOT).broadcast_into(&mut target_vector);
+    world
+        .process_at_rank(ROOT)
+        .broadcast_into(&mut target_vector);
     println!("[Rank {}] Target vector broadcasted", rank);
     println!("[Rank {}] Starting top-k similarity search", rank);
 
     // Perform the top-k similarity search
-    let global_top_k = parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k, &target_vector);
-    
+    let global_top_k =
+        parallel_top_k_similarity_search(&world, rank, size, vstore_dir, top_k, &target_vector);
+
     // Record similarity search timing
     benchmark_manager.record(search_timer.stop());
 
     // Time the metrics calculation
+    println!("[Rank {}] Starting metrics timer", rank);
     let metrics_timer = BenchmarkTimer::start("metrics_calculation");
-    
+    world.barrier();
+
     // Root process handles the results and metrics calculation
     if is_root(rank) {
         if let Some(top_k_results) = global_top_k {
@@ -156,16 +161,16 @@ async fn main() {
             println!("Error: Failed to compute global top-k results");
         }
     }
-    
+
     // Record metrics calculation timing
     benchmark_manager.record(metrics_timer.stop());
-    
+
     // Record total execution time
     benchmark_manager.record(overall_timer.stop());
 
     // After all MPI operations are done, generate and print benchmark report
     world.barrier();
-    
+
     if is_root(rank) {
         // Generate and print the benchmark report
         println!("\n\n");
