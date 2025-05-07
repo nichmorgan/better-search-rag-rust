@@ -171,8 +171,7 @@ async fn main() {
         println!("\n\n");
         println!("{}", benchmark_manager.generate_report(&world, None));
     }
-    
-    if is_root(rank) {
-        println!("MPI operations completed successfully");
-    }
+
+    world.barrier();
+    println!("[Rank {}] Process completed, terminating", rank);
 }

@@ -193,6 +193,9 @@ pub fn parallel_top_k_similarity_search<C: Communicator>(
     // Gather results to root
     let (global_indices, global_distances) = gather_top_k_results(world, rank, &local_top_k);
 
+    // Critical: Ensure all processes wait here with a barrier
+    world.barrier();
+
     // Only root computes global top-k
     if is_root(rank) {
         let global_top_k = compute_global_top_k(global_indices, global_distances, top_k);
