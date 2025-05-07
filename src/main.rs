@@ -123,7 +123,4 @@ async fn main() {
     if is_root(rank) {
         println!("MPI operations completed successfully");
     }
-
-    // Clean exit to avoid finalization issues
-    mpi_finish(rank);
 }

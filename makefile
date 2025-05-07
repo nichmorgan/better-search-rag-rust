@@ -1,5 +1,5 @@
 N ?= 6
-SKIP_PROCESS ?= 0
+SKIP_PROCESS ?= false
 OUT_FILE = ./target/release/better-search-rag-rust
 
 run-ollama:
